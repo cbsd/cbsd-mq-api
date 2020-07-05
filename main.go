@@ -82,13 +82,13 @@ type Bcreate struct {
 }
 
 type Bhyves struct {
-	Jname     string
-	Jid       int
-	Vm_Ram    int // MB
-	Vm_Cpus   int
-	Vm_Os_Type string
-	Status string
-	Vnc string
+	Jname		string
+	Jid		int
+	Vm_Ram		int // MB
+	Vm_Cpus		int
+	Vm_Os_Type	string
+	Status		string
+	Vnc		string
 }
 
 var bhyves []Bhyves
@@ -141,19 +141,20 @@ func main() {
 	HandleInitBhyveList()
 
 	router := mux.NewRouter()
-	router.HandleFunc("/api/v1/list", HandleBhyveList).Methods("GET")
 	router.HandleFunc("/api/v1/cacheblist", HandleCacheBhyveList).Methods("GET")
+	router.HandleFunc("/api/v1/create/{instanceid}", HandleBhyveCreate).Methods("POST")
+	router.HandleFunc("/api/v1/imagelist", HandleImageList).Methods("GET")
+	router.HandleFunc("/api/v1/list", HandleBhyveList).Methods("GET")
+	router.HandleFunc("/api/v1/remove/{instanceid}", HandleBhyveRemove).Methods("POST")
 	router.HandleFunc("/api/v1/start/{instanceid}", HandleBhyveStart).Methods("POST")
 	router.HandleFunc("/api/v1/stop/{instanceid}", HandleBhyveStop).Methods("POST")
-	router.HandleFunc("/api/v1/remove/{instanceid}", HandleBhyveRemove).Methods("POST")
-	router.HandleFunc("/api/v1/create/{instanceid}", HandleBhyveCreate).Methods("POST")
 	log.Fatal(http.ListenAndServe(listen, router))
 }
 
 func HandleBhyveList(w http.ResponseWriter, r *http.Request) {
 //	lock.Lock()
 
-	body := "{\"Command\":\"bls\",\"CommandArgs\":{\"header\":\"0\",\"display\":\"jname,jid,vm_ram,vm_cpus,vm_os_type,status,vnc_port\"}}"
+	body := "{\"Command\":\"bls\",\"CommandArgs\":{\"header\":\"0\",\"display\":\"jname,jid,vm_ram,vm_cpus,vm_os_type,status,vnc_port\",\"hidden\": \"0\"}}"
 	a := &body
 	stdout, err := beanstalkSend(config.BeanstalkConfig, *a)
 //	lock.Unlock()
@@ -185,6 +186,23 @@ func HandleBhyveList(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(&imas)
 }
+
+
+func HandleImageList(w http.ResponseWriter, r *http.Request) {
+	var ImageListFile string
+	if len(config.ImageList) > 0 {
+		ImageListFile=config.ImageList
+	} else {
+		return
+	}
+	content, err := ioutil.ReadFile(ImageListFile)
+	if err != nil {
+		return
+	}
+	text := string(content)
+	http.Error(w, text, 200)
+}
+
 
 func HandleInitBhyveList() {
 	lock.Lock()
