@@ -14,13 +14,11 @@ import (
 	"io/ioutil"
 	"fmt"
 	"bytes"
-	. "github.com/mattn/go-getopt"
 	"reflect"
 	"flag"
 )
 
 var lock = sync.RWMutex{}
-var listen string
 var config Config
 
 // The bcreate Type. Name of elements must match with jconf params
@@ -93,42 +91,16 @@ type Bhyves struct {
 
 var bhyves []Bhyves
 
-func init() {
-	var c int
-	// defaults
-	listen = ":8081"
-
-	OptErr = 0
-	for {
-		if c = Getopt("l:h"); c == EOF {
-			break
-		}
-		switch c {
-		case 'l':
-			listen = OptArg
-		case 'h':
-			usage()
-			os.Exit(1)
-		}
-	}
-}
-
-func usage() {
-	println("usage: capi [-l listenaddress|-h]")
-}
-
 var (
-	configFile      = flag.String("config", "/usr/local/etc/cbsd-mq-router.json", "Path to config.json")
-	body            = flag.String("body", "foobar", "Body of message")
+	body		= flag.String("body", "", "Body of message")
+	configFile	= flag.String("config", "/usr/local/etc/cbsd-mq-router.json", "Path to config.json")
+	listen *string	= flag.String("listen", "127.0.0.1:8081", "Listen host:port")
 )
-
-func init() {
-	flag.Parse()
-}
 
 // main function to boot up everything
 func main() {
 
+	flag.Parse()
 	var err error
 
 	config, err = LoadConfiguration(*configFile)
@@ -148,7 +120,8 @@ func main() {
 	router.HandleFunc("/api/v1/remove/{instanceid}", HandleBhyveRemove).Methods("POST")
 	router.HandleFunc("/api/v1/start/{instanceid}", HandleBhyveStart).Methods("POST")
 	router.HandleFunc("/api/v1/stop/{instanceid}", HandleBhyveStop).Methods("POST")
-	log.Fatal(http.ListenAndServe(listen, router))
+	fmt.Println("Listen",*listen)
+	log.Fatal(http.ListenAndServe(*listen, router))
 }
 
 func HandleBhyveList(w http.ResponseWriter, r *http.Request) {
