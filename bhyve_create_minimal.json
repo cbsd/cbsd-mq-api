@@ -1,7 +1,0 @@
-    {
-        "imgsize": "20g",
-        "vm_cpus": "1",
-        "vm_ram": "1g",
-        "vm_os_type": "freebsd",
-        "vm_os_profile": "FreeBSD-x64-12.1"
-    }

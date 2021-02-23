@@ -1,3 +1,4 @@
+// CBSD Project 2013-2021
 package main
 
 import (
@@ -5,97 +6,67 @@ import (
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
-	"os/exec"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
-	"io/ioutil"
 	"fmt"
-	"bytes"
 	"reflect"
 	"flag"
+	"io/ioutil"
+	"crypto/md5"
+	"os/exec"
+	"golang.org/x/crypto/ssh"
 )
 
 var lock = sync.RWMutex{}
-var config Config
+var config	Config
+var runscript	string
+var workdir	string
+var server_url	string
 
-// The bcreate Type. Name of elements must match with jconf params
-type Bcreate struct {
-	Jname			string	`json:"jname,omitempty"`
-	Xhci			string	`json:"xhci,omitempty"`
-	Astart			string	`json:"astart,omitempty"`
-	Relative_path		string	`json:"relative_path,omitempty"`
-	Path			string	`json:"path,omitempty"`
-	Data			string	`json:"data,omitempty"`
-	Rcconf			string	`json:"rcconf,omitempty"`
-	Host_hostname		string	`json:"host_hostname,omitempty"`
-	Ip4_addr		string	`json:"ip4_addr,omitempty"`
-	Nic_hwaddr		string	`json:"nic_hwaddr,omitempty"`
-	Zfs_snapsrc		string	`json:"zfs_snapsrc,omitempty"`
-	Runasap			string	`json:"runasap,omitempty"`
-	Interface		string	`json:"interface,omitempty"`
-	Rctl_nice		string	`json:"rctl_nice,omitempty"`
-	Emulator		string	`json:"emulator,omitempty"`
-	Imgsize			string	`json:"imgsize,omitempty"`
-	Imgtype			string	`json:"imgtype,omitempty"`
-	Vm_cpus			string	`json:"vm_cpus,omitempty"`
-	Vm_ram			string	`json:"vm_ram,omitempty"`
-	Vm_os_type		string	`json:"vm_os_type,omitempty"`
-	Vm_efi			string	`json:"vm_efi,omitempty"`
-	Iso_site		string	`json:"iso_site,omitempty"`
-	Iso_img			string	`json:"iso_img,omitempty"`
-	Register_iso_name	string	`json:"register_iso_name,omitempty"`
-	Register_iso_as		string	`json:"register_iso_as,omitempty"`
-	Vm_hostbridge		string	`json:"vm_hostbridge,omitempty"`
-	Bhyve_flags		string	`json:"bhyve_flags,omitempty"`
-	Virtio_type		string	`json:"virtio_type,omitempty"`
-	Vm_os_profile		string	`json:"vm_os_profile,omitempty"`
-	Swapsize		string	`json:"swapsize,omitempty"`
-	Vm_iso_path		string	`json:"vm_iso_path,omitempty"`
-	Vm_guestfs		string	`json:"vm_guestfs,omitempty"`
-	Vm_vnc_port		string	`json:"vm_vnc_port,omitempty"`
-	Bhyve_generate_acpi	string	`json:"bhyve_generate_acpi,omitempty"`
-	Bhyve_wire_memory	string	`json:"bhyve_wire_memory,omitempty"`
-	Bhyve_rts_keeps_utc	string	`json:"bhyve_rts_keeps_utc,omitempty"`
-	Bhyve_force_msi_irq	string	`json:"bhyve_force_msi_irq,omitempty"`
-	Bhyve_x2apic_mode	string	`json:"bhyve_x2apic_mode,omitempty"`
-	Bhyve_mptable_gen	string	`json:"bhyve_mptable_gen,omitempty"`
-	Bhyve_ignore_msr_acc	string	`json:"bhyve_ignore_msr_acc,omitempty"`
-	Cd_vnc_wait		string	`json:"cd_vnc_wait,omitempty"`
-	Bhyve_vnc_resolution	string	`json:"bhyve_vnc_resolution,omitempty"`
-	Bhyve_vnc_tcp_bind	string	`json:"bhyve_vnc_tcp_bind,omitempty"`
-	Bhyve_vnc_vgaconf	string	`json:"bhyve_vnc_vgaconf,omitempty"`
-	Nic_driver		string	`json:"nic_driver,omitempty"`
-	Vnc_password		string	`json:"vnc_password,omitempty"`
-	Media_auto_eject	string	`json:"media_auto_eject,omitempty"`
-	Vm_cpu_topology		string	`json:"vm_cpu_topology,omitempty"`
-	Debug_engine		string	`json:"debug_engine,omitempty"`
-	Cd_boot_firmware	string	`json:"cd_boot_firmware,omitempty"`
-	Jailed			string	`json:"jailed,omitempty"`
-	On_poweroff		string	`json:"on_poweroff,omitempty"`
-	On_reboot		string	`json:"on_reboot,omitempty"`
-	On_crash		string	`json:"on_crash,omitempty"`
+type Response struct {
+	Message    string
 }
 
-type Bhyves struct {
-	Jname		string
-	Jid		int
-	Vm_Ram		int // MB
-	Vm_Cpus		int
-	Vm_Os_Type	string
-	Status		string
-	Vnc		string
+// The cluster Type. Name of elements must match with jconf params
+type Vm struct {
+	Type		string	`json:type,omitempty"`
+	Jname		string	`json:jname,omitempty"`
+	Img		string	`json:img,omitempty"`
+	Ram		string	`json:ram,omitempty"`
+	Cpus		string	`"cpus,omitempty"`
+	Imgsize		string	`"imgsize,omitempty"`
+	Pubkey		string	`"pubkey,omitempty"`
 }
 
-var bhyves []Bhyves
-
+// Todo: validate mod?
+//  e.g for simple check:
+//  bhyve_name  string `json:"name" validate:"required,min=2,max=100"`
 var (
 	body		= flag.String("body", "", "Body of message")
-	configFile	= flag.String("config", "/usr/local/etc/cbsd-mq-router.json", "Path to config.json")
-	listen *string	= flag.String("listen", "127.0.0.1:8081", "Listen host:port")
+	cbsdEnv		= flag.String("cbsdenv", "/usr/jails", "CBSD workdir environment")
+	configFile	= flag.String("config", "/usr/local/etc/cbsd-mq-api.json", "Path to config.json")
+	listen *string	= flag.String("listen", "0.0.0.0:65531", "Listen host:port")
+	runScriptJail	= flag.String("runscript_jail", "jail-api", "CBSD target run script")
+	runScriptBhyve	= flag.String("runscript_bhyve", "bhyve-api", "CBSD target run script")
+	destroyScript	= flag.String("destroy_script", "control-api", "CBSD target run script")
+	startScript	= flag.String("start_script", "control-api", "CBSD target run script")
+	stopScript	= flag.String("stop_script", "control-api", "CBSD target run script")
+	serverUrl	= flag.String("server_url", "http://127.0.0.1:65532", "Server URL for external requests") 
+	dbDir		= flag.String("dbdir", "/var/db/cbsd-api", "db root dir")
 )
+
+func fileExists(filename string) bool {
+//	info, err := os.Stat(filename)
+	_, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+//	return !info.IsDir()
+	return true
+}
 
 // main function to boot up everything
 func main() {
@@ -105,210 +76,134 @@ func main() {
 
 	config, err = LoadConfiguration(*configFile)
 
+	workdir=config.CbsdEnv
+	server_url=config.ServerUrl
+
 	if err != nil {
 		fmt.Println("config load error")
 		os.Exit(1)
 	}
 
-	HandleInitBhyveList()
+	if !fileExists(config.Recomendation) {
+		fmt.Printf("no such Recomendation script, please check config/path: %s\n",config.Recomendation)
+		os.Exit(1)
+	}
+	if !fileExists(config.Freejname) {
+		fmt.Printf("no such Freejname script, please check config/path: %s\n",config.Freejname)
+		os.Exit(1)
+	}
+
+	if !fileExists(*dbDir) {
+		fmt.Printf("db dir created: %s\n",*dbDir)
+		os.Mkdir(*dbDir, 0770)
+	}
 
 	router := mux.NewRouter()
-	router.HandleFunc("/api/v1/cacheblist", HandleCacheBhyveList).Methods("GET")
-	router.HandleFunc("/api/v1/create/{instanceid}", HandleBhyveCreate).Methods("POST")
-	router.HandleFunc("/api/v1/imagelist", HandleImageList).Methods("GET")
-	router.HandleFunc("/api/v1/list", HandleBhyveList).Methods("GET")
-	router.HandleFunc("/api/v1/remove/{instanceid}", HandleBhyveRemove).Methods("POST")
-	router.HandleFunc("/api/v1/start/{instanceid}", HandleBhyveStart).Methods("POST")
-	router.HandleFunc("/api/v1/stop/{instanceid}", HandleBhyveStop).Methods("POST")
+	router.HandleFunc("/api/v1/create/{instanceid}", HandleClusterCreate).Methods("POST")
+	router.HandleFunc("/api/v1/status/{instanceid}", HandleClusterStatus).Methods("GET")
+	router.HandleFunc("/api/v1/start/{instanceid}", HandleClusterStart).Methods("GET")
+	router.HandleFunc("/api/v1/stop/{instanceid}", HandleClusterStop).Methods("GET")
+	router.HandleFunc("/api/v1/cluster", HandleClusterCluster).Methods("GET")
+	router.HandleFunc("/api/v1/destroy/{instanceid}", HandleClusterDestroy).Methods("GET")
 	fmt.Println("Listen",*listen)
+	fmt.Println("Server URL",server_url)
 	log.Fatal(http.ListenAndServe(*listen, router))
 }
 
-func HandleBhyveList(w http.ResponseWriter, r *http.Request) {
-//	lock.Lock()
+func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
+	var instanceid string
+	params := mux.Vars(r)
+	instanceid = params["instanceid"]
+	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
 
-	body := "{\"Command\":\"bls\",\"CommandArgs\":{\"header\":\"0\",\"display\":\"jname,jid,vm_ram,vm_cpus,vm_os_type,status,vnc_port\",\"hidden\": \"0\"}}"
-	a := &body
-	stdout, err := beanstalkSend(config.BeanstalkConfig, *a)
-//	lock.Unlock()
-
-	if err != nil {
+	Cid := r.Header.Get("cid")
+	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
+	//fmt.Println("CID IS: [ %s ]", cid)
+	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
 		return
 	}
 
-	lines := strings.Split(string(stdout), "\n")
-	imas := make([]Bhyves, 0)
-
-	for _, line := range lines {
-		if len(line)>2 {
-			ima := Bhyves{}
-			re_leadclose_whtsp := regexp.MustCompile(`^[\s\p{Zs}]+|[\s\p{Zs}]+$`)
-			re_inside_whtsp := regexp.MustCompile(`[\s\p{Zs}]{2,}`)
-			n := re_leadclose_whtsp.ReplaceAllString(line, "")
-			n = re_inside_whtsp.ReplaceAllString(line, " ")
-			ima.Jname = strings.Split(n, " ")[0]
-			ima.Jid, err = strconv.Atoi(strings.Split(n, " ")[1])
-			ima.Vm_Ram, err = strconv.Atoi(strings.Split(n, " ")[2])
-			ima.Vm_Cpus, err = strconv.Atoi(strings.Split(n, " ")[3])
-			ima.Vm_Os_Type = strings.Split(n, " ")[4]
-			ima.Status = strings.Split(n, " ")[5]
-			ima.Vnc = strings.Split(n, " ")[6]
-			imas = append(imas, ima)
-		}
+	// check the name field is between 3 to 40 chars
+	if len(instanceid) < 3 || len(instanceid) > 40 {
+		http.Error(w, "The instance name must be between 3-40", 400)
+		return
+	}
+	if !regexpInstanceId.MatchString(instanceid) {
+		http.Error(w, "The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$", 400)
+		return
 	}
 
-	json.NewEncoder(w).Encode(&imas)
-}
+	mapfile := fmt.Sprintf("/root/srv/map/%s-%s", Cid,instanceid)
 
+	if !fileExists(config.Recomendation) {
+		fmt.Printf("no such map file /root/srv/map/%s-%s\n",Cid, instanceid)
+		response := Response{"no found"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), http.StatusNotFound)
+		return
+	}
 
-func HandleImageList(w http.ResponseWriter, r *http.Request) {
-	var ImageListFile string
-	if len(config.ImageList) > 0 {
-		ImageListFile=config.ImageList
+	b, err := ioutil.ReadFile(mapfile) // just pass the file name
+	if err != nil {
+		fmt.Printf("unable to read jname from /root/srv/map/%s-%s\n",Cid, instanceid)
+		response := Response{"no found"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), http.StatusNotFound)
+		return
+	}
+
+	SqliteDBPath := fmt.Sprintf("%s/%s/%s-bhyve.ssh", *dbDir, Cid,string(b))
+	if fileExists(SqliteDBPath) {
+		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
+		if err != nil {
+			http.Error(w, "{}", 400)
+			return
+		} else {
+			// when json:
+			//response := Response{string(b)}
+			//js, err := json.Marshal(response)
+			//if err != nil {
+			//	http.Error(w, err.Error(), http.StatusInternalServerError)
+			//	return
+			//}
+			// when human:
+			js := string(b)
+			http.Error(w, string(js), 400)
+			return
+		}
 	} else {
-		return
+		http.Error(w, "{}", 400)
 	}
-	content, err := ioutil.ReadFile(ImageListFile)
-	if err != nil {
-		return
-	}
-	text := string(content)
-	http.Error(w, text, 200)
 }
 
-
-func HandleInitBhyveList() {
-	lock.Lock()
-	cmd := exec.Command("env","NOCOLOR=0","cbsd","bls","header=0","display=jname,jid,vm_ram,vm_cpus,vm_os_type,status,vnc_port")
-	stdout, err := cmd.Output()
-	lock.Unlock()
-
-	if err != nil {
+func HandleClusterCluster(w http.ResponseWriter, r *http.Request) {
+	Cid := r.Header.Get("cid")
+	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
+	//fmt.Println("CID IS: [ %s ]", cid)
+	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
 		return
 	}
 
-	lines := strings.Split(string(stdout), "\n")
-
-	for _, line := range lines {
-		if len(line)>2 {
-			ima := Bhyves{}
-			re_leadclose_whtsp := regexp.MustCompile(`^[\s\p{Zs}]+|[\s\p{Zs}]+$`)
-			re_inside_whtsp := regexp.MustCompile(`[\s\p{Zs}]{2,}`)
-			n := re_leadclose_whtsp.ReplaceAllString(line, "")
-			n = re_inside_whtsp.ReplaceAllString(line, " ")
-			ima.Jname = strings.Split(n, " ")[0]
-			ima.Jid, err = strconv.Atoi(strings.Split(n, " ")[1])
-			ima.Vm_Ram, err = strconv.Atoi(strings.Split(n, " ")[2])
-			ima.Vm_Cpus, err = strconv.Atoi(strings.Split(n, " ")[3])
-			ima.Vm_Os_Type = strings.Split(n, " ")[4]
-			ima.Status = strings.Split(n, " ")[5]
-			ima.Vnc = strings.Split(n, " ")[6]
-			bhyves = append(bhyves, ima)
+	SqliteDBPath := fmt.Sprintf("%s/%s/vm.list", *dbDir, Cid)
+	if fileExists(SqliteDBPath) {
+		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
+		if err != nil {
+			http.Error(w, "{}", 400)
+			return
+		} else {
+			http.Error(w, string(b), 200)
+			return
 		}
-	}
-}
-
-func HandleCacheBhyveList(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(&bhyves)
-}
-
-func HandleBhyveStart(w http.ResponseWriter, r *http.Request) {
-
-	params := mux.Vars(r)
-	var instanceid string
-	_ = json.NewDecoder(r.Body).Decode(&instanceid)
-	instanceid = params["instanceid"]
-
-	go realInstanceStart(instanceid)
-
-	return
-}
-
-func realInstanceStart(instanceid string) {
-	body := fmt.Sprintf("{\"Command\":\"bstart\",\"CommandArgs\":{\"jname\":\"%s\"}}",instanceid)
-	a := &body
-	stdout, err := beanstalkSend(config.BeanstalkConfig, *a)
-	fmt.Printf("%s\n",stdout);
-
-	if err != nil {
-		return
-	}
-}
-
-
-func HandleBhyveStop(w http.ResponseWriter, r *http.Request) {
-
-	params := mux.Vars(r)
-	var instanceid string
-	buf, bodyErr := ioutil.ReadAll(r.Body)
-
-	if bodyErr != nil {
-		fmt.Printf("bodyErr %s", bodyErr.Error())
-		http.Error(w, bodyErr.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	rdr1 := ioutil.NopCloser(bytes.NewBuffer(buf))
-	rdr2 := ioutil.NopCloser(bytes.NewBuffer(buf))
-	fmt.Printf("BODY rdr1: %q", rdr1)
-	r.Body = rdr2
-
-	_ = json.NewDecoder(r.Body).Decode(&instanceid)
-	instanceid = params["instanceid"]
-
-	go realInstanceStop(instanceid)
-
-	return
-}
-
-func realInstanceStop(instanceid string) {
-
-	body := fmt.Sprintf("{\"Command\":\"bstop\",\"CommandArgs\":{\"jname\":\"%s\"}}",instanceid)
-	a := &body
-	stdout, err := beanstalkSend(config.BeanstalkConfig, *a)
-	fmt.Printf("%s\n",stdout);
-
-	if err != nil {
-		return
-	}
-}
-
-
-func HandleBhyveRemove(w http.ResponseWriter, r *http.Request) {
-
-	params := mux.Vars(r)
-	var instanceid string
-	buf, bodyErr := ioutil.ReadAll(r.Body)
-
-	if bodyErr != nil {
-		//log.Print("bodyErr ", bodyErr.Error())
-		fmt.Printf("bodyErr %s", bodyErr.Error())
-		http.Error(w, bodyErr.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	rdr1 := ioutil.NopCloser(bytes.NewBuffer(buf))
-	rdr2 := ioutil.NopCloser(bytes.NewBuffer(buf))
-	fmt.Printf("BODY rdr1: %q", rdr1)
-	//fmt.Printf("BODY rdr2: %q", rdr2)
-	r.Body = rdr2
-
-	_ = json.NewDecoder(r.Body).Decode(&instanceid)
-	instanceid = params["instanceid"]
-	go realInstanceRemove(instanceid)
-
-	return
-}
-
-func realInstanceRemove(instanceid string) {
-
-	body := fmt.Sprintf("{\"Command\":\"bremove\",\"CommandArgs\":{\"jname\":\"%s\"}}",instanceid)
-	a := &body
-	stdout, err := beanstalkSend(config.BeanstalkConfig, *a)
-	fmt.Printf("%s\n",stdout);
-
-	if err != nil {
-		return
+	} else {
+		http.Error(w, "{}", 400)
 	}
 }
 
@@ -325,32 +220,257 @@ func realInstanceCreate(body string) {
 	}
 }
 
-func getStructTag(f reflect.StructField) string {
-	return string(f.Tag)
+func getNodeRecomendation(body string) {
+	cmdStr := fmt.Sprintf("%s %s", config.Recomendation,body)
+	//cmdStr := fmt.Sprintf("/root/api/get_recomendation.sh %s", body)
+	cmdArgs := strings.Fields(cmdStr)
+	cmd := exec.Command(cmdArgs[0], cmdArgs[1:len(cmdArgs)]...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+			fmt.Println("/root/api/get_recomendation.sh failed")
+	}
+	result := (string(out))
+	fmt.Printf("Host Recomendation: [%s]\n",result)
+
+	result = strings.Replace(result, ".", "_", -1)
+	result = strings.Replace(result, "-", "_", -1)
+
+	tube := fmt.Sprintf("cbsd_%s",result)
+	reply := fmt.Sprintf("cbsd_%s_result_id",result)
+
+	fmt.Printf("Tube selected: [%s]\n",tube)
+	fmt.Printf("ReplyTube selected: [%s]\n",reply)
+
+	config.BeanstalkConfig.Tube=tube
+	config.BeanstalkConfig.ReplyTubePrefix=reply
 }
 
-func HandleBhyveCreate(w http.ResponseWriter, r *http.Request) {
+
+func getJname() string {
+	cmdStr := fmt.Sprintf("%s", config.Freejname)
+	cmdArgs := strings.Fields(cmdStr)
+	cmd := exec.Command(cmdArgs[0], cmdArgs[1:len(cmdArgs)]...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+			fmt.Println("/root/api/get_recomendation.sg failed")
+	}
+	result := (string(out))
+	fmt.Printf("Freejname Recomendation: [%s]\n",result)
+	return result
+}
+
+func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	var instanceid string
 	params := mux.Vars(r)
 	instanceid = params["instanceid"]
+	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
+	var regexpSize = regexp.MustCompile(`^[1-9](([0-9]+)?)([m|g|t])$`)
+	var regexpPubkey = regexp.MustCompile("^(ssh-rsa|ssh-dss|ssh-ed25519|ecdsa-[^ ]+) ([^ ]+) ?(.*)")
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// check the name field is between 3 to 40 chars
+	if len(instanceid) < 2 || len(instanceid) > 40 {
+		response := Response{"The instance name must be between 2-40"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+	if !regexpInstanceId.MatchString(instanceid) {
+		response := Response{"The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+
 
 	if r.Body == nil {
-			http.Error(w, "Please send a request body", 400)
+		response := Response{"please send a request body"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+
+	fmt.Println("create wakeup")
+
+	var vm Vm
+	_ = json.NewDecoder(r.Body).Decode(&vm)
+
+	switch vm.Type {
+		case "jail":
+			fmt.Println(vm.Type, "type selected")
+			runscript = *runScriptJail
+		case "bhyve":
+			fmt.Println(vm.Type, "type selected")
+			runscript = *runScriptBhyve
+		default:
+			fmt.Println("Unknown resource type:", vm.Type, "valid: 'bhyve', 'jail'")
+			response := Response{"unknown resource type"}
+			js, err := json.Marshal(response)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			http.Error(w, string(js), 400)
 			return
 	}
 
-	var bcreate Bcreate
-	_ = json.NewDecoder(r.Body).Decode(&bcreate)
-	bcreate.Jname = instanceid
-	json.NewEncoder(w).Encode(bcreate)
-	val := reflect.ValueOf(bcreate)
+	if ( len(vm.Pubkey)<30 ) {
+		fmt.Printf("Error: Pubkey too small: []\n",vm.Pubkey)
+		response := Response{"Pubkey too small"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+
+	if ( len(vm.Pubkey)>500 ) {
+		response := Response{"Pubkey too long"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+
+	if !regexpPubkey.MatchString(vm.Pubkey) {
+		response := Response{"pubkey should be valid form. valid key: ssh-rsa,ssh-ed25519,ecdsa-*,ssh-dsa XXXXX comment"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+
+	parsedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(vm.Pubkey))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("pubKey: [%x]\n",parsedKey)
+
+	uid := []byte(vm.Pubkey)
+
+	// master value validation
+	cpus, err := strconv.Atoi(vm.Cpus)
+	fmt.Printf("C: [%s] [%d]\n",vm.Cpus, vm.Cpus)
+	if err != nil {
+		response := Response{"cpus not a number"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+	if cpus <= 0 || cpus > 10 {
+		response := Response{"Cpus valid range: 1-16"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+
+	if !regexpSize.MatchString(vm.Ram) {
+		response := Response{"The ram should be valid form, 512m, 1g"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+	if !regexpSize.MatchString(vm.Imgsize) {
+		response := Response{"The imgsize should be valid form, 2g, 30g"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+
+	//existance?
+	// check for existance
+	cid := md5.Sum(uid)
+	VmPathDir := fmt.Sprintf("%s/%x", *dbDir, cid)
+
+	if !fileExists(VmPathDir) {
+		os.Mkdir(VmPathDir, 0775)
+	}
+
+	VmPath := fmt.Sprintf("%s/%x/vm-%s", *dbDir, cid,instanceid)
+	fmt.Println(*dbDir, "instance exist")
+
+	if fileExists(VmPath) {
+		response := Response{"vm already exist"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+	// create empty file
+	f, err := os.Create(VmPath)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+
+	Jname := getJname()
+	fmt.Printf("GET NEXT FREE JNAME: [%s]\n",Jname)
+
+	_, err2 := f.WriteString(Jname)
+
+	if err2 != nil {
+		log.Fatal(err2)
+	}
+
+	f.Close()
+
+	vm.Jname = instanceid
+	val := reflect.ValueOf(vm)
 
 	var jconf_param string
 	var str strings.Builder
-
-	str.WriteString("{\"Command\":\"bcreate\",\"CommandArgs\":{\"jname\":\"")
-	str.WriteString(instanceid)
+	var recomendation strings.Builder
+	// of course we can use marshal here instead of string concatenation, 
+	// but now this is too simple case/data without any processing
+	str.WriteString("{\"Command\":\"")
+	str.WriteString(runscript)
+	str.WriteString("\",\"CommandArgs\":{\"mode\":\"create\",\"jname\":\"")
+	str.WriteString(Jname)
 	str.WriteString("\"")
+	//str.WriteString("}}");
 
 	for i := 0; i < val.NumField(); i++ {
 		valueField := val.Field(i)
@@ -372,13 +492,439 @@ func HandleBhyveCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Printf("jconf: %s,\tField Name: %s,\t Field Value: %v,\t Tag Value: %s\n", jconf_param, typeField.Name, valueField.Interface(), tag.Get("tag_name"))
 		buf := fmt.Sprintf(",\"%s\": \"%s\"", jconf_param, tmpval)
+		buf2 := fmt.Sprintf("%s ", tmpval)
 		str.WriteString(buf)
+		recomendation.WriteString(buf2)
 	}
 
+	str.WriteString(",\"host_hostname\": \"")
+	str.WriteString(instanceid)
+	str.WriteString("\"}}");
+	fmt.Printf("C: [%s]\n",str.String())
+	response := fmt.Sprintf("API:\ncurl -H \"cid:%x\" %s/api/v1/cluster\ncurl -H \"cid:%x\" %s/api/v1/status/%s\ncurl -H \"cid:%x\" %s/api/v1/start/%s\ncurl -H \"cid:%x\" %s/api/v1/stop/%s\ncurl -H \"cid:%x\" %s/api/v1/destroy/%s\n", cid, server_url, cid, server_url, instanceid, cid, server_url, instanceid, cid, server_url, instanceid, cid, server_url, instanceid)
+//	md5uid := cid
+//	response := string(md5uid[:])
+
+//	js, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	getNodeRecomendation(recomendation.String())
+	go realInstanceCreate(str.String())
+
+	mapfile := fmt.Sprintf("/root/srv/map/%x-%s", cid,instanceid)
+	m, err := os.Create(mapfile)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err3 := m.WriteString(Jname)
+
+	if err3 != nil {
+		log.Fatal(err3)
+	}
+
+	m.Close()
+
+	http.Error(w, response, 200)
+
+	return
+}
+
+
+func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
+	var instanceid string
+	params := mux.Vars(r)
+	instanceid = params["instanceid"]
+	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
+
+	Cid := r.Header.Get("cid")
+	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
+	//fmt.Println("CID IS: [ %s ]", cid)
+	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// check the name field is between 3 to 40 chars
+	if len(instanceid) < 3 || len(instanceid) > 40 {
+		http.Error(w, "The instance name must be between 3-40", 400)
+		return
+	}
+	if !regexpInstanceId.MatchString(instanceid) {
+		http.Error(w, "The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$", 400)
+		return
+	}
+
+	mapfile := fmt.Sprintf("/root/srv/map/%s-%s", Cid,instanceid)
+
+	if !fileExists(config.Recomendation) {
+		fmt.Printf("no such map file /root/srv/map/%s-%s\n",Cid, instanceid)
+		response := Response{"no found"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), http.StatusNotFound)
+		return
+	}
+
+	b, err := ioutil.ReadFile(mapfile) // just pass the file name
+	if err != nil {
+		fmt.Printf("unable to read jname from /root/srv/map/%s-%s\n",Cid, instanceid)
+		response := Response{"no found"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), http.StatusNotFound)
+		return
+	}
+
+	fmt.Printf("Destroy %s via /root/srv/map/%x-%s\n",string(b), Cid, instanceid)
+
+	// of course we can use marshal here instead of string concatenation, 
+	// but now this is too simple case/data without any processing
+	var str strings.Builder
+
+	// destroy via
+	runscript = *destroyScript
+	str.WriteString("{\"Command\":\"")
+	str.WriteString(runscript)
+	str.WriteString("\",\"CommandArgs\":{\"mode\":\"destroy\",\"jname\":\"")
+	str.WriteString(string(b))
+	str.WriteString("\"")
 	str.WriteString("}}");
+
+	//get guest nodes & tubes
+	SqliteDBPath := fmt.Sprintf("%s/%s/%s.node", *dbDir, Cid,string(b))
+	if fileExists(SqliteDBPath) {
+		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
+		if err != nil {
+			response := Response{"unabe to read node map"}
+			js, err := json.Marshal(response)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			http.Error(w, string(js), http.StatusNotFound)
+			return
+		} else {
+			result := strings.Replace(string(b), ".", "_", -1)
+			result = strings.Replace(result, "-", "_", -1)
+			result = strings.TrimSuffix(result, "\n")
+		//	result = strings.Replace(result, "\r\n", "", -1)
+
+			tube := fmt.Sprintf("cbsd_%s",result)
+			reply := fmt.Sprintf("cbsd_%s_result_id",result)
+
+			fmt.Printf("Tube selected: [%s]\n",tube)
+			fmt.Printf("ReplyTube selected: [%s]\n",reply)
+
+			// result: srv-03.olevole.ru
+			config.BeanstalkConfig.Tube=tube
+			config.BeanstalkConfig.ReplyTubePrefix=reply
+		}
+	} else {
+		response := Response{"unabe to open node map"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), http.StatusNotFound)
+		return
+	}
 
 	fmt.Printf("C: [%s]\n",str.String())
 	go realInstanceCreate(str.String())
 
+	e := os.Remove(mapfile)
+	if e != nil { 
+		log.Fatal(e) 
+	}
+
+	// remove from FS
+	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir,Cid,instanceid)
+	if fileExists(VmPath) {
+		b, err := ioutil.ReadFile(VmPath) // just pass the file name
+		if err != nil {
+			fmt.Printf("Error read UID from  [%s]\n",string(b))
+		} else {
+
+			fmt.Printf("   REMOVE: %s\n",VmPath)
+			e = os.Remove(VmPath)
+
+			VmPath = fmt.Sprintf("%s/%s/%s.node", *dbDir,Cid,string(b))
+			fmt.Printf("   REMOVE: %s\n",VmPath)
+			e = os.Remove(VmPath)
+
+			VmPath = fmt.Sprintf("%s/%s/%s-bhyve.ssh", *dbDir,Cid,string(b))
+			fmt.Printf("   REMOVE: %s\n",VmPath)
+			e = os.Remove(VmPath)
+
+			VmPath = fmt.Sprintf("%s/%s/vms/%s", *dbDir,Cid,string(b))
+			fmt.Printf("   REMOVE: %s\n",VmPath)
+			e = os.Remove(VmPath)
+		}
+	}
+
+	response := Response{"destroy"}
+	js, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Error(w, string(js), 200)
 	return
 }
+
+func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
+	var instanceid string
+	params := mux.Vars(r)
+	instanceid = params["instanceid"]
+	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
+
+	Cid := r.Header.Get("cid")
+	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
+	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// check the name field is between 3 to 40 chars
+	if len(instanceid) < 3 || len(instanceid) > 40 {
+		http.Error(w, "The instance name must be between 3-40", 400)
+		return
+	}
+	if !regexpInstanceId.MatchString(instanceid) {
+		http.Error(w, "The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$", 400)
+		return
+	}
+
+	mapfile := fmt.Sprintf("/root/srv/map/%s-%s", Cid,instanceid)
+
+	if !fileExists(config.Recomendation) {
+		fmt.Printf("no such map file /root/srv/map/%s-%s\n",Cid, instanceid)
+		response := Response{"no found"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), http.StatusNotFound)
+		return
+	}
+
+	b, err := ioutil.ReadFile(mapfile) // just pass the file name
+	if err != nil {
+		fmt.Printf("unable to read jname from /root/srv/map/%s-%s\n",Cid, instanceid)
+		response := Response{"no found"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), http.StatusNotFound)
+		return
+	}
+
+	fmt.Printf("stop %s via /root/srv/map/%s-%s\n",string(b), Cid, instanceid)
+
+	// of course we can use marshal here instead of string concatenation, 
+	// but now this is too simple case/data without any processing
+	var str strings.Builder
+
+	runscript = *stopScript
+	str.WriteString("{\"Command\":\"")
+	str.WriteString(runscript)
+	str.WriteString("\",\"CommandArgs\":{\"mode\":\"stop\",\"jname\":\"")
+	str.WriteString(string(b))
+	str.WriteString("\"")
+	str.WriteString("}}");
+
+	//get guest nodes & tubes
+	SqliteDBPath := fmt.Sprintf("%s/%s/%s.node", *dbDir, Cid,string(b))
+	if fileExists(SqliteDBPath) {
+		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
+		if err != nil {
+			http.Error(w, "{}", 400)
+			return
+		} else {
+			result := strings.Replace(string(b), ".", "_", -1)
+			result = strings.Replace(result, "-", "_", -1)
+			result = strings.TrimSuffix(result, "\n")
+		//	result = strings.Replace(result, "\r\n", "", -1)
+
+			tube := fmt.Sprintf("cbsd_%s",result)
+			reply := fmt.Sprintf("cbsd_%s_result_id",result)
+
+			fmt.Printf("Tube selected: [%s]\n",tube)
+			fmt.Printf("ReplyTube selected: [%s]\n",reply)
+
+			// result: srv-03.olevole.ru
+			config.BeanstalkConfig.Tube=tube
+			config.BeanstalkConfig.ReplyTubePrefix=reply
+		}
+	} else {
+		response := Response{"nodes node found"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 200)
+		return
+	}
+
+	fmt.Printf("C: [%s]\n",str.String())
+	go realInstanceCreate(str.String())
+
+	// remove from FS
+	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir, Cid,instanceid)
+	if fileExists(VmPath) {
+		b, err := ioutil.ReadFile(VmPath) // just pass the file name
+		if err != nil {
+			fmt.Printf("Error read UID from  [%s]\n",string(b))
+		}
+	}
+
+	response := Response{"stopped"}
+	js, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Error(w, string(js), 200)
+	return
+}
+
+
+func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
+	var instanceid string
+	params := mux.Vars(r)
+	instanceid = params["instanceid"]
+	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
+
+	Cid := r.Header.Get("cid")
+	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir,Cid)
+	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// check the name field is between 3 to 40 chars
+	if len(instanceid) < 3 || len(instanceid) > 40 {
+		http.Error(w, "The instance name must be between 3-40", 400)
+		return
+	}
+	if !regexpInstanceId.MatchString(instanceid) {
+		http.Error(w, "The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$", 400)
+		return
+	}
+
+	mapfile := fmt.Sprintf("/root/srv/map/%s-%s", Cid,instanceid)
+
+	if !fileExists(config.Recomendation) {
+		fmt.Printf("no such map file /root/srv/map/%s-%s\n",Cid, instanceid)
+		response := Response{"no found"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), http.StatusNotFound)
+		return
+	}
+
+	b, err := ioutil.ReadFile(mapfile) // just pass the file name
+	if err != nil {
+		fmt.Printf("unable to read jname from /root/srv/map/%s-%s\n",Cid, instanceid)
+		response := Response{"no found"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), http.StatusNotFound)
+		return
+	}
+
+	fmt.Printf("start %s via /root/srv/map/%s-%s\n",string(b), Cid, instanceid)
+
+	// of course we can use marshal here instead of string concatenation, 
+	// but now this is too simple case/data without any processing
+	var str strings.Builder
+
+	runscript = *startScript
+	str.WriteString("{\"Command\":\"")
+	str.WriteString(runscript)
+	str.WriteString("\",\"CommandArgs\":{\"mode\":\"start\",\"jname\":\"")
+	str.WriteString(string(b))
+	str.WriteString("\"")
+	str.WriteString("}}");
+
+	//get guest nodes & tubes
+	SqliteDBPath := fmt.Sprintf("%s/%s/%s.node", *dbDir,Cid,string(b))
+	if fileExists(SqliteDBPath) {
+		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
+		if err != nil {
+			http.Error(w, "{}", 400)
+			return
+		} else {
+			result := strings.Replace(string(b), ".", "_", -1)
+			result = strings.Replace(result, "-", "_", -1)
+			result = strings.TrimSuffix(result, "\n")
+		//	result = strings.Replace(result, "\r\n", "", -1)
+
+			tube := fmt.Sprintf("cbsd_%s",result)
+			reply := fmt.Sprintf("cbsd_%s_result_id",result)
+
+			fmt.Printf("Tube selected: [%s]\n",tube)
+			fmt.Printf("ReplyTube selected: [%s]\n",reply)
+
+			// result: srv-03.olevole.ru
+			config.BeanstalkConfig.Tube=tube
+			config.BeanstalkConfig.ReplyTubePrefix=reply
+		}
+	} else {
+		response := Response{"nodes node found"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 200)
+		return
+	}
+
+	fmt.Printf("C: [%s]\n",str.String())
+	go realInstanceCreate(str.String())
+
+	// remove from FS
+	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir,Cid,instanceid)
+	if fileExists(VmPath) {
+		b, err := ioutil.ReadFile(VmPath) // just pass the file name
+		if err != nil {
+			fmt.Printf("Error read UID from  [%s]\n",string(b))
+		}
+	}
+
+	response := Response{"started"}
+	js, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Error(w, string(js), 200)
+	return
+}
+
