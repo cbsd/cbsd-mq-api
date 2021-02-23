@@ -95,7 +95,7 @@ func main() {
 
 	if !fileExists(*dbDir) {
 		fmt.Printf("db dir created: %s\n",*dbDir)
-		os.Mkdir(*dbDir, 0770)
+		os.MkdirAll(*dbDir, 0770)
 	}
 
 	router := mux.NewRouter()
