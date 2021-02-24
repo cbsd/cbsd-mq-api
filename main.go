@@ -371,40 +371,52 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 
 	uid := []byte(vm.Pubkey)
 
-	// master value validation
-	cpus, err := strconv.Atoi(vm.Cpus)
-	fmt.Printf("C: [%s] [%d]\n",vm.Cpus, vm.Cpus)
-	if err != nil {
-		response := Response{"cpus not a number"}
-		js, err := json.Marshal(response)
+	// not for jail yet
+
+	if (strings.Compare(vm.Type,"bhyve" ) == 0) {
+		// master value validation
+		cpus, err := strconv.Atoi(vm.Cpus)
+		fmt.Printf("C: [%s] [%d]\n",vm.Cpus, vm.Cpus)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			response := Response{"cpus not a number"}
+			js, err := json.Marshal(response)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			http.Error(w, string(js), 400)
 			return
 		}
-		http.Error(w, string(js), 400)
-		return
-	}
-	if cpus <= 0 || cpus > 10 {
-		response := Response{"Cpus valid range: 1-16"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		if cpus <= 0 || cpus > 10 {
+			response := Response{"Cpus valid range: 1-16"}
+			js, err := json.Marshal(response)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			http.Error(w, string(js), 400)
 			return
 		}
-		http.Error(w, string(js), 400)
-		return
+	} else {
+		vm.Cpus="0"
 	}
 
-	if !regexpSize.MatchString(vm.Ram) {
-		response := Response{"The ram should be valid form, 512m, 1g"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+	if (strings.Compare(vm.Type,"bhyve" ) == 0) {
+		if !regexpSize.MatchString(vm.Ram) {
+			response := Response{"The ram should be valid form, 512m, 1g"}
+			js, err := json.Marshal(response)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			http.Error(w, string(js), 400)
 			return
 		}
-		http.Error(w, string(js), 400)
-		return
+	} else {
+		vm.Ram="0"
 	}
+
+
 	if !regexpSize.MatchString(vm.Imgsize) {
 		response := Response{"The imgsize should be valid form, 2g, 30g"}
 		js, err := json.Marshal(response)
@@ -415,7 +427,6 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, string(js), 400)
 		return
 	}
-
 	//existance?
 	// check for existance
 	cid := md5.Sum(uid)
