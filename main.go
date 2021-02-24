@@ -543,8 +543,15 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 
 	Cid := r.Header.Get("cid")
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
-	//fmt.Println("CID IS: [ %s ]", cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
+		fmt.Println("path not found:", HomePath)
+		response := Response{"env no found"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), http.StatusNotFound)
 		return
 	}
 
