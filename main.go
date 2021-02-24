@@ -133,10 +133,10 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mapfile := fmt.Sprintf("/root/srv/map/%s-%s", Cid,instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid,instanceid)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file /root/srv/map/%s-%s\n",Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/map/%s-%s\n",workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -149,7 +149,7 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from /root/srv/map/%s-%s\n",Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -514,7 +514,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	getNodeRecomendation(recomendation.String())
 	go realInstanceCreate(str.String())
 
-	mapfile := fmt.Sprintf("/root/srv/map/%x-%s", cid,instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%x-%s", workdir, cid,instanceid)
 	m, err := os.Create(mapfile)
 
 	if err != nil {
@@ -560,10 +560,10 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mapfile := fmt.Sprintf("/root/srv/map/%s-%s", Cid,instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid,instanceid)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file /root/srv/map/%s-%s\n",Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -576,7 +576,7 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from /root/srv/map/%s-%s\n",Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -587,9 +587,9 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("Destroy %s via /root/srv/map/%x-%s\n",string(b), Cid, instanceid)
+	fmt.Printf("Destroy %s via %s/var/db/api/map/%x-%s\n",string(b), workdir, Cid, instanceid)
 
-	// of course we can use marshal here instead of string concatenation, 
+	// of course we can use marshal here instead of string concatenation,
 	// but now this is too simple case/data without any processing
 	var str strings.Builder
 
@@ -709,10 +709,10 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mapfile := fmt.Sprintf("/root/srv/map/%s-%s", Cid,instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid,instanceid)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file /root/srv/map/%s-%s\n",Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -725,7 +725,7 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from /root/srv/map/%s-%s\n",Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -736,9 +736,9 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("stop %s via /root/srv/map/%s-%s\n",string(b), Cid, instanceid)
+	fmt.Printf("stop %s via %s/var/db/api/map/%s-%s\n",string(b), workdir, Cid, instanceid)
 
-	// of course we can use marshal here instead of string concatenation, 
+	// of course we can use marshal here instead of string concatenation,
 	// but now this is too simple case/data without any processing
 	var str strings.Builder
 
@@ -831,10 +831,10 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mapfile := fmt.Sprintf("/root/srv/map/%s-%s", Cid,instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid,instanceid)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file /root/srv/map/%s-%s\n",Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -847,7 +847,7 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from /root/srv/map/%s-%s\n",Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -858,9 +858,9 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("start %s via /root/srv/map/%s-%s\n",string(b), Cid, instanceid)
+	fmt.Printf("start %s via %s/var/db/api/map/%s-%s\n",string(b), workdir, Cid, instanceid)
 
-	// of course we can use marshal here instead of string concatenation, 
+	// of course we can use marshal here instead of string concatenation,
 	// but now this is too simple case/data without any processing
 	var str strings.Builder
 
