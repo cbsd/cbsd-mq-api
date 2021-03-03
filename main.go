@@ -59,13 +59,19 @@ var (
 )
 
 func fileExists(filename string) bool {
-//	info, err := os.Stat(filename)
 	_, err := os.Stat(filename)
-	if os.IsNotExist(err) {
-		return false
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("file does not exist", filename)
+			return false
+		} else {
+			// error
+			return false
+		}
+	} else {
+		// file exist
+		return true
 	}
-//	return !info.IsDir()
-	return true
 }
 
 // main function to boot up everything
@@ -437,9 +443,9 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	VmPath := fmt.Sprintf("%s/%x/vm-%s", *dbDir, cid,instanceid)
-	fmt.Println(*dbDir, "instance exist")
 
 	if fileExists(VmPath) {
+		fmt.Printf("vm already exist: [%s]\n",VmPath)
 		response := Response{"vm already exist"}
 		js, err := json.Marshal(response)
 		if err != nil {
