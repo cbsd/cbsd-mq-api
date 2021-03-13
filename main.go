@@ -362,7 +362,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		if (strings.Compare(vm.Type,"jail") == 0) {
 			if !regexpPkgList.MatchString(vm.PkgList) {
 				fmt.Printf("Error: wrong pkglist: [%s]\n",vm.PkgList)
-				response := Response{"pkglist should be valid form. valid form: [aA-zZ_/]([aA-zZ0-9_/])"}
+				response := Response{"pkglist should be valid form. valid form: [aA-zZ_]([aA-zZ0-9_])"}
 				js, err := json.Marshal(response)
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
