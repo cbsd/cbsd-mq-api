@@ -40,6 +40,7 @@ type Vm struct {
 	Imgsize		string	`"imgsize,omitempty"`
 	Pubkey		string	`"pubkey,omitempty"`
 	PkgList		string	`"pkglist,omitempty"`
+	Tags		string	`"tags,omitempty"`
 }
 
 // Todo: validate mod?
@@ -272,6 +273,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	instanceid = params["instanceid"]
 	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
 	var regexpPkgList = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_ ])*$`)
+	var regexpTags = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_ ])*$`)
 	var regexpSize = regexp.MustCompile(`^[1-9](([0-9]+)?)([m|g|t])$`)
 	var regexpPubkey = regexp.MustCompile("^(ssh-rsa|ssh-dss|ssh-ed25519|ecdsa-[^ ]+) ([^ ]+) ?(.*)")
 
@@ -384,6 +386,19 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if ( len(vm.Tags)>1 ) {
+		if !regexpTags.MatchString(vm.Tags) {
+			fmt.Printf("Error: wrong tags: [%s]\n",vm.Tags)
+			response := Response{"tags should be valid form. valid form: [aA-zZ_]([aA-zZ0-9_])"}
+			js, err := json.Marshal(response)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			http.Error(w, string(js), 400)
+			return
+		}
+	}
 	if !regexpPubkey.MatchString(vm.Pubkey) {
 		response := Response{"pubkey should be valid form. valid key: ssh-rsa,ssh-ed25519,ecdsa-*,ssh-dsa XXXXX comment"}
 		js, err := json.Marshal(response)
