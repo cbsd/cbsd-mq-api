@@ -60,6 +60,16 @@ var (
 	dbDir		= flag.String("dbdir", "/var/db/cbsd-api", "db root dir")
 )
 
+// we need overwrite Content-Type here
+// https://stackoverflow.com/questions/59763852/can-you-return-json-in-golang-http-error
+func JSONError(w http.ResponseWriter, err interface{}, code int) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(code)
+//	json.NewEncoder(w).Encode(err)
+	fmt.Fprintln(w, err)
+}
+
 func fileExists(filename string) bool {
 	_, err := os.Stat(filename)
 	if err != nil {
@@ -124,8 +134,6 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	instanceid = params["instanceid"]
 	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
 
-	w.Header().Set("Content-Type", "application/json")
-
 	Cid := r.Header.Get("cid")
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	//fmt.Println("CID IS: [ %s ]", cid)
@@ -135,11 +143,11 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 
 	// check the name field is between 3 to 40 chars
 	if len(instanceid) < 3 || len(instanceid) > 40 {
-		http.Error(w, "The instance name must be between 3-40", 400)
+		JSONError(w, "The instance name must be between 3-40", 400)
 		return
 	}
 	if !regexpInstanceId.MatchString(instanceid) {
-		http.Error(w, "The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$", 400)
+		JSONError(w, "The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$", 400)
 		return
 	}
 
@@ -150,7 +158,7 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			JSONError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		http.Error(w, string(js), http.StatusNotFound)
@@ -163,7 +171,7 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			JSONError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		http.Error(w, string(js), http.StatusNotFound)
@@ -174,7 +182,7 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	if fileExists(SqliteDBPath) {
 		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
 		if err != nil {
-			http.Error(w, "{}", 400)
+			JSONError(w, "{}", 400)
 			return
 		} else {
 			// when json:
@@ -186,11 +194,11 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 			//}
 			// when human:
 			js := string(b)
-			http.Error(w, string(js), 200)
+			JSONError(w, string(js), 200)
 			return
 		}
 	} else {
-		http.Error(w, "{}", 400)
+		JSONError(w, "{}", 400)
 	}
 }
 
