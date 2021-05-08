@@ -124,6 +124,8 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	instanceid = params["instanceid"]
 	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
 
+	w.Header().Set("Content-Type", "application/json")
+
 	Cid := r.Header.Get("cid")
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	//fmt.Println("CID IS: [ %s ]", cid)
@@ -184,7 +186,7 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 			//}
 			// when human:
 			js := string(b)
-			http.Error(w, string(js), 400)
+			http.Error(w, string(js), 200)
 			return
 		}
 	} else {
