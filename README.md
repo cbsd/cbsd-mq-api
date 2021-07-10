@@ -9,6 +9,48 @@ go get
 go run ./cbsd-mq-api [ -l listen]
 
 
+# Install
+
+mkdir -p /var/db/cbsd-api /usr/jails/var/db/api/map
+chown -R cbsd:cbsd /var/db/cbsd-api /usr/jails/var/db/api/map
+
+Install api.d module + enable in modules.conf, cbsd initenv.
+
+Setup api.d module: make sure
+
+    "recomendation": "/usr/local/cbsd/modules/api.d/misc/recomendation.sh",
+    "freejname": "/usr/local/cbsd/modules/api.d/misc/freejname.sh",
+
+script works!
+
+
+# On host
+
+1) pkg install -y sysutils/cbsd-mq-router
+
+2) setup cbsd-mq-router.json, e.g:
+--
+{
+    "cbsdenv": "/usr/jails",
+    "cbsdcolor": false,
+    "broker": "beanstalkd",
+    "logfile": "/dev/stdout",
+    "beanstalkd": {
+      "uri": "127.0.0.1:11300",
+      "tube": "cbsd_mother_olevole_ru",
+      "reply_tube_prefix": "cbsd_mother_olevole_ru_result_id",
+      "reconnect_timeout": 5,
+      "reserve_timeout": 5,
+      "publish_timeout": 5,
+      "logdir": "/var/log/cloudmq"
+    }
+}
+--
+
+3) service cbsd-mq-router enable
+4) service cbsd-mq-router start
+
+
 Endpoints:
 
 *list bhyve domain*:

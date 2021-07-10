@@ -40,7 +40,9 @@ type Vm struct {
 	Imgsize		string	`"imgsize,omitempty"`
 	Pubkey		string	`"pubkey,omitempty"`
 	PkgList		string	`"pkglist,omitempty"`
-	Tags		string	`"tags,omitempty"`
+	Extras		string	`"extras,omitempty"`
+	Recomendation	string	`"recomendation,omitempty"`
+	Host_hostname	string	`"host_hostname,omitempty"`
 }
 
 // Todo: validate mod?
@@ -142,8 +144,8 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check the name field is between 3 to 40 chars
-	if len(instanceid) < 3 || len(instanceid) > 40 {
-		JSONError(w, "The instance name must be between 3-40", 400)
+	if len(instanceid) < 1 || len(instanceid) > 40 {
+		JSONError(w, "The instance name must be between 1-40", 400)
 		return
 	}
 	if !regexpInstanceId.MatchString(instanceid) {
@@ -214,14 +216,14 @@ func HandleClusterCluster(w http.ResponseWriter, r *http.Request) {
 	if fileExists(SqliteDBPath) {
 		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
 		if err != nil {
-			http.Error(w, "{}", 400)
+			JSONError(w, "{}", 400)
 			return
 		} else {
-			http.Error(w, string(b), 200)
+			JSONError(w, string(b), 200)
 			return
 		}
 	} else {
-		http.Error(w, "{}", 400)
+		JSONError(w, "{}", 400)
 	}
 }
 
@@ -238,16 +240,26 @@ func realInstanceCreate(body string) {
 	}
 }
 
-func getNodeRecomendation(body string) {
-	cmdStr := fmt.Sprintf("%s %s", config.Recomendation,body)
-	//cmdStr := fmt.Sprintf("/root/api/get_recomendation.sh %s", body)
-	cmdArgs := strings.Fields(cmdStr)
-	cmd := exec.Command(cmdArgs[0], cmdArgs[1:len(cmdArgs)]...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-			fmt.Println("/root/api/get_recomendation.sh failed")
+func getNodeRecomendation(body string, offer string) {
+	// offer - recomendation host from user, we can check them in external helper
+	// for valid/resource
+
+	var result string
+
+	if len(offer)>1 {
+		result = offer
+		fmt.Printf("FORCED Host Recomendation: [%s]\n",result)
+	} else {
+		cmdStr := fmt.Sprintf("%s %s", config.Recomendation,body)
+		cmdArgs := strings.Fields(cmdStr)
+		cmd := exec.Command(cmdArgs[0], cmdArgs[1:len(cmdArgs)]...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+				fmt.Println("get recomendation script failed")
+		}
+		result = (string(out))
 	}
-	result := (string(out))
+//	result := (string(out))
 	fmt.Printf("Host Recomendation: [%s]\n",result)
 
 	result = strings.Replace(result, ".", "_", -1)
@@ -283,9 +295,10 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	instanceid = params["instanceid"]
 	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
 	var regexpPkgList = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_ ])*$`)
-	var regexpTags = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_ ])*$`)
+	var regexpExtras = regexp.MustCompile("^[a-zA-Z0-9:,]*$")
 	var regexpSize = regexp.MustCompile(`^[1-9](([0-9]+)?)([m|g|t])$`)
 	var regexpPubkey = regexp.MustCompile("^(ssh-rsa|ssh-dss|ssh-ed25519|ecdsa-[^ ]+) ([^ ]+) ?(.*)")
+	var suggest string
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -359,7 +372,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ( len(vm.Pubkey)>500 ) {
+	if ( len(vm.Pubkey)>1000 ) {
 		response := Response{"Pubkey too long"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -368,6 +381,58 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, string(js), 400)
 		return
+	}
+
+
+	if !regexpPubkey.MatchString(vm.Pubkey) {
+		response := Response{"pubkey should be valid form. valid key: ssh-rsa,ssh-ed25519,ecdsa-*,ssh-dsa XXXXX comment"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+
+	parsedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(vm.Pubkey))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("pubKey: [%x]\n",parsedKey)
+	uid := []byte(vm.Pubkey)
+
+	//existance?
+	// check for existance
+	cid := md5.Sum(uid)
+	VmPathDir := fmt.Sprintf("%s/%x", *dbDir, cid)
+
+	if !fileExists(VmPathDir) {
+		os.Mkdir(VmPathDir, 0775)
+	}
+
+	VmPath := fmt.Sprintf("%s/%x/vm-%s", *dbDir, cid,instanceid)
+
+	if fileExists(VmPath) {
+		fmt.Printf("vm already exist: [%s]\n",VmPath)
+		response := Response{"vm already exist"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), 400)
+		return
+	}
+
+	fmt.Printf("vm file not exist, create empty: [%s]\n",VmPath)
+	// create empty file
+	f, err := os.Create(VmPath)
+
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	if ( len(vm.PkgList)>1 ) {
@@ -396,10 +461,10 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if ( len(vm.Tags)>1 ) {
-		if !regexpTags.MatchString(vm.Tags) {
-			fmt.Printf("Error: wrong tags: [%s]\n",vm.Tags)
-			response := Response{"tags should be valid form. valid form: [aA-zZ_]([aA-zZ0-9_])"}
+	if ( len(vm.Extras)>1 ) {
+		if !regexpExtras.MatchString(vm.Extras) {
+			fmt.Printf("Error: wrong extras: [%s]\n",vm.Extras)
+			response := Response{"extras should be valid form. valid form: ^[a-zA-Z0-9:,]*$"}
 			js, err := json.Marshal(response)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -407,28 +472,17 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 			}
 			http.Error(w, string(js), 400)
 			return
+		} else {
+			fmt.Printf("Found extras: [%s]\n",vm.Extras)
 		}
 	}
-	if !regexpPubkey.MatchString(vm.Pubkey) {
-		response := Response{"pubkey should be valid form. valid key: ssh-rsa,ssh-ed25519,ecdsa-*,ssh-dsa XXXXX comment"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 400)
-		return
+
+	if ( len(vm.Recomendation)>1 ) {
+		fmt.Printf("Found vm recomendation: [%s]\n",vm.Recomendation)
+		suggest = vm.Recomendation
+	} else {
+		suggest = ""
 	}
-
-	parsedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(vm.Pubkey))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	fmt.Printf("pubKey: [%x]\n",parsedKey)
-
-	uid := []byte(vm.Pubkey)
 
 	// not for jail yet
 
@@ -475,7 +529,6 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		vm.Ram="0"
 	}
 
-
 	if !regexpSize.MatchString(vm.Imgsize) {
 		response := Response{"The imgsize should be valid form, 2g, 30g"}
 		js, err := json.Marshal(response)
@@ -486,35 +539,6 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, string(js), 400)
 		return
 	}
-	//existance?
-	// check for existance
-	cid := md5.Sum(uid)
-	VmPathDir := fmt.Sprintf("%s/%x", *dbDir, cid)
-
-	if !fileExists(VmPathDir) {
-		os.Mkdir(VmPathDir, 0775)
-	}
-
-	VmPath := fmt.Sprintf("%s/%x/vm-%s", *dbDir, cid,instanceid)
-
-	if fileExists(VmPath) {
-		fmt.Printf("vm already exist: [%s]\n",VmPath)
-		response := Response{"vm already exist"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 400)
-		return
-	}
-	// create empty file
-	f, err := os.Create(VmPath)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
 
 	Jname := getJname()
 	fmt.Printf("GET NEXT FREE JNAME: [%s]\n",Jname)
@@ -568,7 +592,14 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	str.WriteString(",\"host_hostname\": \"")
-	str.WriteString(instanceid)
+
+	if ( len(vm.Host_hostname)>1 ) {
+		fmt.Printf("Found custom host_hostname: [%s]\n",vm.Host_hostname)
+		str.WriteString(vm.Host_hostname)
+	} else {
+		str.WriteString(instanceid)
+	}
+
 	str.WriteString("\"}}");
 	fmt.Printf("C: [%s]\n",str.String())
 	response := fmt.Sprintf("API:\ncurl -H \"cid:%x\" %s/api/v1/cluster\ncurl -H \"cid:%x\" %s/api/v1/status/%s\ncurl -H \"cid:%x\" %s/api/v1/start/%s\ncurl -H \"cid:%x\" %s/api/v1/stop/%s\ncurl -H \"cid:%x\" %s/api/v1/destroy/%s\n", cid, server_url, cid, server_url, instanceid, cid, server_url, instanceid, cid, server_url, instanceid, cid, server_url, instanceid)
@@ -581,7 +612,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	getNodeRecomendation(recomendation.String())
+	getNodeRecomendation(recomendation.String(), suggest)
 	go realInstanceCreate(str.String())
 
 	mapfile := fmt.Sprintf("%s/var/db/api/map/%x-%s", workdir, cid,instanceid)
@@ -627,9 +658,9 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	// check the name field is between 3 to 40 chars
-	if len(instanceid) < 3 || len(instanceid) > 40 {
-		http.Error(w, "The instance name must be between 3-40", 400)
+	// check the name field is between 1 to 40 chars
+	if len(instanceid) < 1 || len(instanceid) > 40 {
+		http.Error(w, "The instance name must be between 1-40", 400)
 		return
 	}
 	if !regexpInstanceId.MatchString(instanceid) {
@@ -701,8 +732,6 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 			tube := fmt.Sprintf("cbsd_%s",result)
 			reply := fmt.Sprintf("cbsd_%s_result_id",result)
 
-			fmt.Printf("Tube selected: [%s]\n",tube)
-			fmt.Printf("ReplyTube selected: [%s]\n",reply)
 
 			// result: srv-03.olevole.ru
 			config.BeanstalkConfig.Tube=tube
@@ -710,6 +739,8 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		response := Response{"unabe to open node map"}
+		fmt.Printf("uname to open node map: [%s]\n",SqliteDBPath)
+
 		js, err := json.Marshal(response)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -776,9 +807,9 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	// check the name field is between 3 to 40 chars
-	if len(instanceid) < 3 || len(instanceid) > 40 {
-		http.Error(w, "The instance name must be between 3-40", 400)
+	// check the name field is between 1 to 40 chars
+	if len(instanceid) < 1 || len(instanceid) > 40 {
+		http.Error(w, "The instance name must be between 1-40", 400)
 		return
 	}
 	if !regexpInstanceId.MatchString(instanceid) {
@@ -898,9 +929,9 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	// check the name field is between 3 to 40 chars
-	if len(instanceid) < 3 || len(instanceid) > 40 {
-		http.Error(w, "The instance name must be between 3-40", 400)
+	// check the name field is between 1 to 40 chars
+	if len(instanceid) < 1 || len(instanceid) > 40 {
+		http.Error(w, "The instance name must be between 1-40", 400)
 		return
 	}
 	if !regexpInstanceId.MatchString(instanceid) {

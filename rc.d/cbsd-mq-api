@@ -20,6 +20,7 @@ cbsd_mq_api_config=${cbsd_mq_api_config-"/usr/local/etc/cbsd-mq-api.json"}
 required_files="${cbsd_mq_api_config}"
 
 cbsd_mq_api_args=${cbsd_mq_api_args-"-config ${cbsd_mq_api_config}"}
+cbsd_mq_api_flags=${cbsd_mq_api_flags="-listen 127.0.0.1:65531"}
 
 load_rc_config ${name}
 
@@ -47,7 +48,7 @@ start()
 	[ ! -d ${logdir} ] && mkdir -p ${logdir}
 	touch ${logfile}
 	chown ${cbsd_mq_api_user} ${logdir} ${logfile}
-	/usr/sbin/daemon -u ${cbsd_mq_api_user} -f -R5 -p ${pidfile} -P ${daemon_pidfile} -o ${logfile} ${command} ${cbsd_mq_api_args}
+	/usr/sbin/daemon -u ${cbsd_mq_api_user} -f -R5 -p ${pidfile} -P ${daemon_pidfile} -o ${logfile} ${command} ${cbsd_mq_api_args} ${cbsd_mq_api_flags}
 }
 
 reload()
