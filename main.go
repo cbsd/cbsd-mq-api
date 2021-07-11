@@ -65,12 +65,24 @@ var (
 
 // we need overwrite Content-Type here
 // https://stackoverflow.com/questions/59763852/can-you-return-json-in-golang-http-error
-func JSONError(w http.ResponseWriter, err interface{}, code int) {
+func JSONError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// write header is mandatory to overwrite header
 	w.WriteHeader(code)
-	//	json.NewEncoder(w).Encode(err)
-	fmt.Fprintln(w, err)
+
+	if len(message)>0 {
+		response := Response{ message }
+		js, err := json.Marshal(response)
+		if err != nil {
+			fmt.Fprintln(w, "{\"Message\":\"Marshal error\"}", http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, string(js), code)
+	} else {
+		http.Error(w, "{}", http.StatusNotFound)
+	}
+	return
 }
 
 func fileExists(filename string) bool {
@@ -155,24 +167,41 @@ func validateInstanceId(InstanceId string) bool {
 	}
 }
 
+func validateVmType(VmType string) bool {
+	var regexpVmType = regexp.MustCompile("^[a-z]+$")
+
+	//current valid values:
+	// 'jail', 'bhyve', 'xen'
+	if len(VmType) < 2 || len(VmType) > 7 {
+		return false
+	}
+
+	if regexpVmType.MatchString(VmType) {
+		return true
+	} else {
+		return false
+	}
+}
+
 func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	var InstanceId string
 	params := mux.Vars(r)
 
 	InstanceId = params["InstanceId"]
 	if !validateInstanceId(InstanceId) {
-		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", 400)
+		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", http.StatusNotFound)
 		return
 	}
 
 	Cid := r.Header.Get("cid")
 	if !validateCid(Cid) {
-		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", 400)
+		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", http.StatusNotFound)
 		return
 	}
 
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
+		JSONError(w, "not found", http.StatusNotFound)
 		return
 	}
 
@@ -180,26 +209,14 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 
 	if !fileExists(config.Recomendation) {
 		fmt.Printf("no such map file %s/var/db/api/map/map/%s-%s\n", workdir, Cid, InstanceId)
-		response := Response{"no found"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			JSONError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), http.StatusNotFound)
+		JSONError(w, "not found", http.StatusNotFound)
 		return
 	}
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
 		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
-		response := Response{"no found"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			JSONError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), http.StatusNotFound)
+		JSONError(w, "not found", http.StatusNotFound)
 		return
 	}
 
@@ -207,36 +224,32 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	if fileExists(SqliteDBPath) {
 		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
 		if err != nil {
-			JSONError(w, "{}", 400)
+			JSONError(w, "", 400)
 			return
 		} else {
-			// when json:
-			//response := Response{string(b)}
-			//js, err := json.Marshal(response)
-			//if err != nil {
-			//	http.Error(w, err.Error(), http.StatusInternalServerError)
-			//	return
-			//}
-			// when human:
-			js := string(b)
-			JSONError(w, string(js), 200)
+			// already in json - send as-is
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(200)
+			http.Error(w, string(b), 200)
 			return
 		}
 	} else {
-		JSONError(w, "{}", 400)
+		JSONError(w, "", http.StatusNotFound)
 	}
 }
 
 func HandleClusterCluster(w http.ResponseWriter, r *http.Request) {
 	Cid := r.Header.Get("cid")
 	if !validateCid(Cid) {
-		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", 400)
+		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", http.StatusNotFound)
 		return
 	}
 
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	//fmt.Println("CID IS: [ %s ]", cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
+		JSONError(w, "", http.StatusNotFound)
 		return
 	}
 
@@ -244,14 +257,19 @@ func HandleClusterCluster(w http.ResponseWriter, r *http.Request) {
 	if fileExists(SqliteDBPath) {
 		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
 		if err != nil {
-			JSONError(w, "{}", 400)
+			JSONError(w, "", http.StatusNotFound)
 			return
 		} else {
-			JSONError(w, string(b), 200)
+			// already in json - send as-is
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(200)
+			http.Error(w, string(b), 200)
 			return
 		}
 	} else {
-		JSONError(w, "{}", 400)
+		JSONError(w, "", http.StatusNotFound)
+		return
 	}
 }
 
@@ -283,10 +301,11 @@ func getNodeRecomendation(body string, offer string) {
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			fmt.Println("get recomendation script failed")
+			return
 		}
 		result = (string(out))
 	}
-	//	result := (string(out))
+
 	fmt.Printf("Host Recomendation: [%s]\n", result)
 
 	result = strings.Replace(result, ".", "_", -1)
@@ -308,7 +327,8 @@ func getJname() string {
 	cmd := exec.Command(cmdArgs[0], cmdArgs[1:len(cmdArgs)]...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Println("/root/api/get_recomendation.sg failed")
+		fmt.Println("get freejname script failed")
+		return ""
 	}
 	result := (string(out))
 	fmt.Printf("Freejname Recomendation: [%s]\n", result)
@@ -321,26 +341,18 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 
 	InstanceId = params["InstanceId"]
 	if !validateInstanceId(InstanceId) {
-		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", 400)
+		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", http.StatusNotFound)
 		return
 	}
 
-	var regexpPkgList = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_ ])*$`)
+	var regexpPkgList = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_\-/ ])*$`)
 	var regexpExtras = regexp.MustCompile("^[a-zA-Z0-9:,]*$")
 	var regexpSize = regexp.MustCompile(`^[1-9](([0-9]+)?)([m|g|t])$`)
 	var regexpPubkey = regexp.MustCompile("^(ssh-rsa|ssh-dss|ssh-ed25519|ecdsa-[^ ]+) ([^ ]+) ?(.*)")
 	var suggest string
 
-	w.Header().Set("Content-Type", "application/json")
-
 	if r.Body == nil {
-		response := Response{"please send a request body"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 400)
+		JSONError(w, "please send a request body", http.StatusInternalServerError)
 		return
 	}
 
@@ -348,6 +360,11 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 
 	var vm Vm
 	_ = json.NewDecoder(r.Body).Decode(&vm)
+
+	if !validateVmType(vm.Type) {
+		JSONError(w, "Unknown resource type, valid: 'bhyve', 'jail'", http.StatusInternalServerError)
+		return
+	}
 
 	switch vm.Type {
 	case "jail":
@@ -358,53 +375,33 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		runscript = *runScriptBhyve
 	default:
 		fmt.Println("Unknown resource type:", vm.Type, "valid: 'bhyve', 'jail'")
-		response := Response{"unknown resource type"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 400)
+		JSONError(w, "Unknown resource type, valid: 'bhyve', 'jail'", http.StatusInternalServerError)
 		return
 	}
 
 	if len(vm.Pubkey) < 30 {
-		fmt.Printf("Error: Pubkey too small: []\n", vm.Pubkey)
-		response := Response{"Pubkey too small"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 400)
+		fmt.Printf("Error: Pubkey too small\n")
+		JSONError(w, "Pubkey too small", http.StatusInternalServerError)
 		return
 	}
 
 	if len(vm.Pubkey) > 1000 {
-		response := Response{"Pubkey too long"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 400)
+		fmt.Printf("Error: Pubkey too long\n")
+		JSONError(w, "Pubkey too long", http.StatusInternalServerError)
 		return
 	}
 
 	if !regexpPubkey.MatchString(vm.Pubkey) {
-		response := Response{"pubkey should be valid form. valid key: ssh-rsa,ssh-ed25519,ecdsa-*,ssh-dsa XXXXX comment"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 400)
+		fmt.Printf("Error: pubkey should be valid form. valid key: ssh-rsa,ssh-ed25519,ecdsa-*,ssh-dsa XXXXX comment\n")
+		JSONError(w, "pubkey should be valid form. valid key: ssh-rsa,ssh-ed25519,ecdsa-*,ssh-dsa XXXXX comment", http.StatusInternalServerError)
 		return
 	}
 
 	parsedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(vm.Pubkey))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+		fmt.Printf("Error: ParseAuthorizedKey\n")
+		JSONError(w, "ParseAuthorizedKey", http.StatusInternalServerError)
 		return
 	}
 
@@ -423,14 +420,8 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	VmPath := fmt.Sprintf("%s/%x/vm-%s", *dbDir, cid, InstanceId)
 
 	if fileExists(VmPath) {
-		fmt.Printf("vm already exist: [%s]\n", VmPath)
-		response := Response{"vm already exist"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 400)
+		fmt.Printf("Error: vm already exist: [%s]\n", VmPath)
+		JSONError(w, "vm already exist", http.StatusInternalServerError)
 		return
 	}
 
@@ -446,24 +437,12 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		if strings.Compare(vm.Type, "jail") == 0 {
 			if !regexpPkgList.MatchString(vm.PkgList) {
 				fmt.Printf("Error: wrong pkglist: [%s]\n", vm.PkgList)
-				response := Response{"pkglist should be valid form. valid form: [aA-zZ_]([aA-zZ0-9_])"}
-				js, err := json.Marshal(response)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				http.Error(w, string(js), 400)
+				JSONError(w, "pkglist should be valid form. valid form", http.StatusInternalServerError)
 				return
 			}
 		} else {
 			fmt.Printf("Error: Pkglist for jail type only: [%s]\n", vm.Type)
-			response := Response{"Pubkey too small"}
-			js, err := json.Marshal(response)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			http.Error(w, string(js), 400)
+			JSONError(w, "Pkglist for jail type only", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -471,13 +450,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	if len(vm.Extras) > 1 {
 		if !regexpExtras.MatchString(vm.Extras) {
 			fmt.Printf("Error: wrong extras: [%s]\n", vm.Extras)
-			response := Response{"extras should be valid form. valid form: ^[a-zA-Z0-9:,]*$"}
-			js, err := json.Marshal(response)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			http.Error(w, string(js), 400)
+			JSONError(w, "extras should be valid form. valid form", http.StatusInternalServerError)
 			return
 		} else {
 			fmt.Printf("Found extras: [%s]\n", vm.Extras)
@@ -492,29 +465,16 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// not for jail yet
-
 	if strings.Compare(vm.Type, "bhyve") == 0 {
 		// master value validation
 		cpus, err := strconv.Atoi(vm.Cpus)
 		fmt.Printf("C: [%s] [%d]\n", vm.Cpus, vm.Cpus)
 		if err != nil {
-			response := Response{"cpus not a number"}
-			js, err := json.Marshal(response)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			http.Error(w, string(js), 400)
+			JSONError(w, "cpus not a number", http.StatusInternalServerError)
 			return
 		}
 		if cpus <= 0 || cpus > 10 {
-			response := Response{"Cpus valid range: 1-16"}
-			js, err := json.Marshal(response)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			http.Error(w, string(js), 400)
+			JSONError(w, "cpus valid range: 1-16", http.StatusInternalServerError)
 			return
 		}
 	} else {
@@ -523,13 +483,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 
 	if strings.Compare(vm.Type, "bhyve") == 0 {
 		if !regexpSize.MatchString(vm.Ram) {
-			response := Response{"The ram should be valid form, 512m, 1g"}
-			js, err := json.Marshal(response)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			http.Error(w, string(js), 400)
+			JSONError(w, "The ram should be valid form, 512m, 1g", http.StatusInternalServerError)
 			return
 		}
 	} else {
@@ -537,17 +491,16 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !regexpSize.MatchString(vm.Imgsize) {
-		response := Response{"The imgsize should be valid form, 2g, 30g"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 400)
+		JSONError(w, "The imgsize should be valid form, 2g, 30g", http.StatusInternalServerError)
 		return
 	}
 
 	Jname := getJname()
+	if len(Jname)<1 {
+		log.Fatal("unable to get jname")
+		return
+	}
+
 	fmt.Printf("GET NEXT FREE JNAME: [%s]\n", Jname)
 
 	_, err2 := f.WriteString(Jname)
@@ -573,6 +526,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	str.WriteString("\"")
 	//str.WriteString("}}");
 
+	// todo: filter for insecured param=val
 	for i := 0; i < val.NumField(); i++ {
 		valueField := val.Field(i)
 
@@ -591,6 +545,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		if strings.Compare(jconf_param, "jname") == 0 {
 			continue
 		}
+
 		fmt.Printf("jconf: %s,\tField Name: %s,\t Field Value: %v,\t Tag Value: %s\n", jconf_param, typeField.Name, valueField.Interface(), tag.Get("tag_name"))
 		buf := fmt.Sprintf(",\"%s\": \"%s\"", jconf_param, tmpval)
 		buf2 := fmt.Sprintf("%s ", tmpval)
@@ -601,6 +556,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	str.WriteString(",\"host_hostname\": \"")
 
 	if len(vm.Host_hostname) > 1 {
+		// todo: filter for insecured param=val
 		fmt.Printf("Found custom host_hostname: [%s]\n", vm.Host_hostname)
 		str.WriteString(vm.Host_hostname)
 	} else {
@@ -609,11 +565,8 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 
 	str.WriteString("\"}}")
 	fmt.Printf("C: [%s]\n", str.String())
-	response := fmt.Sprintf("API:\ncurl -H \"cid:%x\" %s/api/v1/cluster\ncurl -H \"cid:%x\" %s/api/v1/status/%s\ncurl -H \"cid:%x\" %s/api/v1/start/%s\ncurl -H \"cid:%x\" %s/api/v1/stop/%s\ncurl -H \"cid:%x\" %s/api/v1/destroy/%s\n", cid, server_url, cid, server_url, InstanceId, cid, server_url, InstanceId, cid, server_url, InstanceId, cid, server_url, InstanceId)
-	//	md5uid := cid
-	//	response := string(md5uid[:])
+	response := fmt.Sprintf("{ \"Message\": [\"curl -H cid:%x %s/api/v1/cluster\", \"curl -H cid:%x %s/api/v1/status/%s\", \"curl -H cid:%x %s/api/v1/start/%s\", \"curl -H cid:%x %s/api/v1/stop/%s\", \"curl -H cid:%x %s/api/v1/destroy/%s\"] }", cid, server_url, cid, server_url, InstanceId, cid, server_url, InstanceId, cid, server_url, InstanceId, cid, server_url, InstanceId)
 
-	//	js, err := json.Marshal(response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -637,7 +590,11 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 
 	m.Close()
 
-	http.Error(w, response, 200)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// write header is mandatory to overwrite header
+	w.WriteHeader(200)
+	fmt.Fprintln(w, response)
 
 	return
 }
@@ -647,55 +604,37 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
 	InstanceId = params["InstanceId"]
+
 	if !validateInstanceId(InstanceId) {
-		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", 400)
+		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", http.StatusNotFound)
 		return
 	}
 
 	Cid := r.Header.Get("cid")
 	if !validateCid(Cid) {
-		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", 400)
+		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", http.StatusNotFound)
 		return
 	}
 
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
 		fmt.Println("path not found:", HomePath)
-		response := Response{"env no found"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), http.StatusNotFound)
+		JSONError(w, "not found", http.StatusNotFound)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, InstanceId)
 
 	if !fileExists(config.Recomendation) {
 		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
-		response := Response{"no found"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), http.StatusNotFound)
+		JSONError(w, "not found", http.StatusNotFound)
 		return
 	}
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
 		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
-		response := Response{"no found"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), http.StatusNotFound)
+		JSONError(w, "not found", http.StatusNotFound)
 		return
 	}
 
@@ -719,37 +658,22 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 	if fileExists(SqliteDBPath) {
 		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
 		if err != nil {
-			response := Response{"unabe to read node map"}
-			js, err := json.Marshal(response)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			http.Error(w, string(js), http.StatusNotFound)
+			fmt.Printf("unable to read node map: %s\n", SqliteDBPath)
+			JSONError(w, "unable to read node map", http.StatusNotFound)
 			return
 		} else {
 			result := strings.Replace(string(b), ".", "_", -1)
 			result = strings.Replace(result, "-", "_", -1)
 			result = strings.TrimSuffix(result, "\n")
-			//	result = strings.Replace(result, "\r\n", "", -1)
-
 			tube := fmt.Sprintf("cbsd_%s", result)
 			reply := fmt.Sprintf("cbsd_%s_result_id", result)
-
 			// result: srv-03.olevole.ru
 			config.BeanstalkConfig.Tube = tube
 			config.BeanstalkConfig.ReplyTubePrefix = reply
 		}
 	} else {
-		response := Response{"unabe to open node map"}
-		fmt.Printf("uname to open node map: [%s]\n", SqliteDBPath)
-
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), http.StatusNotFound)
+		fmt.Printf("unable to read node map: %s\n", SqliteDBPath)
+		JSONError(w, "unable to read node map", http.StatusNotFound)
 		return
 	}
 
@@ -786,13 +710,7 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response := Response{"destroy"}
-	js, err := json.Marshal(response)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	http.Error(w, string(js), 200)
+	JSONError(w, "destroy", 200)
 	return
 }
 
@@ -802,13 +720,13 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 
 	InstanceId = params["InstanceId"]
 	if !validateInstanceId(InstanceId) {
-		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", 400)
+		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", http.StatusNotFound)
 		return
 	}
 
 	Cid := r.Header.Get("cid")
 	if !validateCid(Cid) {
-		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", 400)
+		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", http.StatusNotFound)
 		return
 	}
 
@@ -817,31 +735,18 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, InstanceId)
 
 	if !fileExists(config.Recomendation) {
 		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
-		response := Response{"no found"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), http.StatusNotFound)
+		JSONError(w, "not found", http.StatusNotFound)
 		return
 	}
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
 		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
-		response := Response{"no found"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), http.StatusNotFound)
+		JSONError(w, "not found", http.StatusNotFound)
 		return
 	}
 
@@ -864,7 +769,7 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 	if fileExists(SqliteDBPath) {
 		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
 		if err != nil {
-			http.Error(w, "{}", 400)
+			JSONError(w, "{}", 400)
 			return
 		} else {
 			result := strings.Replace(string(b), ".", "_", -1)
@@ -883,13 +788,7 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 			config.BeanstalkConfig.ReplyTubePrefix = reply
 		}
 	} else {
-		response := Response{"nodes node found"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 200)
+		JSONError(w, "nodes not found", http.StatusNotFound)
 		return
 	}
 
@@ -905,13 +804,7 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response := Response{"stopped"}
-	js, err := json.Marshal(response)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	http.Error(w, string(js), 200)
+	JSONError(w, "stopped", 200)
 	return
 }
 
@@ -921,13 +814,13 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 
 	InstanceId = params["InstanceId"]
 	if !validateInstanceId(InstanceId) {
-		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", 400)
+		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", http.StatusNotFound)
 		return
 	}
 
 	Cid := r.Header.Get("cid")
 	if !validateCid(Cid) {
-		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", 400)
+		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", http.StatusNotFound)
 		return
 	}
 
@@ -941,26 +834,14 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 
 	if !fileExists(config.Recomendation) {
 		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
-		response := Response{"no found"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), http.StatusNotFound)
+		JSONError(w, "not found", http.StatusNotFound)
 		return
 	}
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
 		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
-		response := Response{"no found"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), http.StatusNotFound)
+		JSONError(w, "not found", http.StatusNotFound)
 		return
 	}
 
@@ -1002,13 +883,7 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 			config.BeanstalkConfig.ReplyTubePrefix = reply
 		}
 	} else {
-		response := Response{"nodes node found"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 200)
+		JSONError(w, "nodes not found", http.StatusNotFound)
 		return
 	}
 
@@ -1024,12 +899,6 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response := Response{"started"}
-	js, err := json.Marshal(response)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	http.Error(w, string(js), 200)
+	JSONError(w, "started", 200)
 	return
 }
