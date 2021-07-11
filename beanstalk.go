@@ -1,50 +1,51 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"time"
 	"log"
 	"strings"
-	"encoding/json"
+	"time"
+
 	"github.com/beanstalkd/go-beanstalk"
 )
 
 // beanstalk config struct
 type BeanstalkConfig struct {
-	Uri                     string  `json:"uri"`
-	Tube                    string  `json:"tube"`
-	ReplyTubePrefix         string  `json:"reply_tube_prefix"`
-	ReconnectTimeout        int     `json:"reconnect_timeout"`
-	ReserveTimeout          int     `json:"reserve_timeout"`
-	PublishTimeout          int     `json:"publish_timeout"`
+	Uri              string `json:"uri"`
+	Tube             string `json:"tube"`
+	ReplyTubePrefix  string `json:"reply_tube_prefix"`
+	ReconnectTimeout int    `json:"reconnect_timeout"`
+	ReserveTimeout   int    `json:"reserve_timeout"`
+	PublishTimeout   int    `json:"publish_timeout"`
 }
 
-func beanstalkSend(config BeanstalkConfig, body string) (string,error) {
+func beanstalkSend(config BeanstalkConfig, body string) (string, error) {
 
 	amqpURI := config.Uri
 	tube := config.Tube
 
-	fmt.Printf("Calling beanstalkd: %s\n",amqpURI);
-	fmt.Printf("Tube selected: %s\n",tube);
-	fmt.Printf("Reply Tube prefix: %s\n",config.ReplyTubePrefix);
+	fmt.Printf("Calling beanstalkd: %s\n", amqpURI)
+	fmt.Printf("Tube selected: %s\n", tube)
+	fmt.Printf("Reply Tube prefix: %s\n", config.ReplyTubePrefix)
 
 	c, err := beanstalk.Dial("tcp", amqpURI)
 
 	if err != nil {
 		log.Printf("Unable connect to beanstalkd broker:%s", err)
-		return "",err
+		return "", err
 	}
 
 	mytube := &beanstalk.Tube{Conn: c, Name: tube}
 	id, err := mytube.Put([]byte(body), 1, 0, time.Duration(config.PublishTimeout)*time.Second)
 
 	if err != nil {
-		fmt.Printf("\nerr: %d\n",err)
-		return "",err
+		fmt.Printf("\nerr: %d\n", err)
+		return "", err
 	}
 
-	callbackQueueName := fmt.Sprintf("%s%d",config.ReplyTubePrefix,id)
-	fmt.Printf("got id: %d,callback queue name: %s\n",id,callbackQueueName)
+	callbackQueueName := fmt.Sprintf("%s%d", config.ReplyTubePrefix, id)
+	fmt.Printf("got id: %d,callback queue name: %s\n", id, callbackQueueName)
 
 	c1 := make(chan string)
 
@@ -56,12 +57,12 @@ func beanstalkSend(config BeanstalkConfig, body string) (string,error) {
 			id, body, err := c.Reserve(time.Duration(config.ReserveTimeout) * time.Second)
 
 			if err != nil {
-				fmt.Printf("\nid: %d, res: %s\n",id, err.Error())
+				fmt.Printf("\nid: %d, res: %s\n", id, err.Error())
 			}
- 
+
 			if id == 0 {
 				return // timeout
-//				continue
+				//				continue
 			}
 
 			cbsdTask := CbsdTask{}
@@ -72,7 +73,7 @@ func beanstalkSend(config BeanstalkConfig, body string) (string,error) {
 				return
 			}
 
-			if cbsdTask.Progress==100 {
+			if cbsdTask.Progress == 100 {
 				c1 <- cbsdTask.Message
 			}
 			c.Delete(id)
@@ -80,19 +81,19 @@ func beanstalkSend(config BeanstalkConfig, body string) (string,error) {
 	}()
 
 	select {
-		case msg1 := <-c1:
-			if strings.Compare(msg1,"EOF") == 0 {
-				fmt.Printf("EXIT\n");
-				c.Close()
-				return "",err
-			} else {
-				fmt.Println("received:", msg1)
-				fmt.Printf("EXIT\n");
-				c.Close()
-				return msg1,err
-			}
+	case msg1 := <-c1:
+		if strings.Compare(msg1, "EOF") == 0 {
+			fmt.Printf("EXIT\n")
+			c.Close()
+			return "", err
+		} else {
+			fmt.Println("received:", msg1)
+			fmt.Printf("EXIT\n")
+			c.Close()
+			return msg1, err
+		}
 	}
 
 	c.Close()
-	return "",err
+	return "", err
 }

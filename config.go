@@ -1,22 +1,22 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"encoding/json"
 )
 
 type Config struct {
-	ServerUrl		string	`json:"server_url"`
-	CbsdEnv			string	`json:"cbsdenv"`
-	Broker			string	`json:"broker"`
-	ImageList		string	`json:"imagelist"`
-	Recomendation		string	`json:"recomendation"`
-	Freejname		string	`json:"freejname"`
-	BeanstalkConfig		`json:"beanstalkd"`
+	ServerUrl       string `json:"server_url"`
+	CbsdEnv         string `json:"cbsdenv"`
+	Broker          string `json:"broker"`
+	ImageList       string `json:"imagelist"`
+	Recomendation   string `json:"recomendation"`
+	Freejname       string `json:"freejname"`
+	BeanstalkConfig `json:"beanstalkd"`
 }
 
-func LoadConfiguration(file string) (Config,error) {
+func LoadConfiguration(file string) (Config, error) {
 	var config Config
 	configFile, err := os.Open(file)
 	defer configFile.Close()
@@ -30,7 +30,7 @@ func LoadConfiguration(file string) (Config,error) {
 	err = jsonParser.Decode(&config)
 
 	if err != nil {
-		fmt.Printf("config error: %s: %s\n", file,err.Error())
+		fmt.Printf("config error: %s: %s\n", file, err.Error())
 		return config, err
 	}
 

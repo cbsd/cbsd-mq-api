@@ -2,64 +2,65 @@
 package main
 
 import (
+	"crypto/md5"
 	"encoding/json"
-	"github.com/gorilla/mux"
+	"flag"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
-	"fmt"
-	"reflect"
-	"flag"
-	"io/ioutil"
-	"crypto/md5"
-	"os/exec"
+
+	"github.com/gorilla/mux"
 	"golang.org/x/crypto/ssh"
 )
 
 var lock = sync.RWMutex{}
-var config	Config
-var runscript	string
-var workdir	string
-var server_url	string
+var config Config
+var runscript string
+var workdir string
+var server_url string
 
 type Response struct {
-	Message    string
+	Message string
 }
 
 // The cluster Type. Name of elements must match with jconf params
 type Vm struct {
-	Type		string	`json:type,omitempty"`
-	Jname		string	`json:jname,omitempty"`
-	Img		string	`json:img,omitempty"`
-	Ram		string	`json:ram,omitempty"`
-	Cpus		string	`"cpus,omitempty"`
-	Imgsize		string	`"imgsize,omitempty"`
-	Pubkey		string	`"pubkey,omitempty"`
-	PkgList		string	`"pkglist,omitempty"`
-	Extras		string	`"extras,omitempty"`
-	Recomendation	string	`"recomendation,omitempty"`
-	Host_hostname	string	`"host_hostname,omitempty"`
+	Type          string `json:type,omitempty"`
+	Jname         string `json:jname,omitempty"`
+	Img           string `json:img,omitempty"`
+	Ram           string `json:ram,omitempty"`
+	Cpus          string `"cpus,omitempty"`
+	Imgsize       string `"imgsize,omitempty"`
+	Pubkey        string `"pubkey,omitempty"`
+	PkgList       string `"pkglist,omitempty"`
+	Extras        string `"extras,omitempty"`
+	Recomendation string `"recomendation,omitempty"`
+	Host_hostname string `"host_hostname,omitempty"`
 }
 
 // Todo: validate mod?
 //  e.g for simple check:
 //  bhyve_name  string `json:"name" validate:"required,min=2,max=100"`
 var (
-	body		= flag.String("body", "", "Body of message")
-	cbsdEnv		= flag.String("cbsdenv", "/usr/jails", "CBSD workdir environment")
-	configFile	= flag.String("config", "/usr/local/etc/cbsd-mq-api.json", "Path to config.json")
-	listen *string	= flag.String("listen", "0.0.0.0:65531", "Listen host:port")
-	runScriptJail	= flag.String("runscript_jail", "jail-api", "CBSD target run script")
-	runScriptBhyve	= flag.String("runscript_bhyve", "bhyve-api", "CBSD target run script")
-	destroyScript	= flag.String("destroy_script", "control-api", "CBSD target run script")
-	startScript	= flag.String("start_script", "control-api", "CBSD target run script")
-	stopScript	= flag.String("stop_script", "control-api", "CBSD target run script")
-	serverUrl	= flag.String("server_url", "http://127.0.0.1:65532", "Server URL for external requests") 
-	dbDir		= flag.String("dbdir", "/var/db/cbsd-api", "db root dir")
+	body                   = flag.String("body", "", "Body of message")
+	cbsdEnv                = flag.String("cbsdenv", "/usr/jails", "CBSD workdir environment")
+	configFile             = flag.String("config", "/usr/local/etc/cbsd-mq-api.json", "Path to config.json")
+	listen         *string = flag.String("listen", "0.0.0.0:65531", "Listen host:port")
+	runScriptJail          = flag.String("runscript_jail", "jail-api", "CBSD target run script")
+	runScriptBhyve         = flag.String("runscript_bhyve", "bhyve-api", "CBSD target run script")
+	destroyScript          = flag.String("destroy_script", "control-api", "CBSD target run script")
+	startScript            = flag.String("start_script", "control-api", "CBSD target run script")
+	stopScript             = flag.String("stop_script", "control-api", "CBSD target run script")
+	serverUrl              = flag.String("server_url", "http://127.0.0.1:65532", "Server URL for external requests")
+	dbDir                  = flag.String("dbdir", "/var/db/cbsd-api", "db root dir")
 )
 
 // we need overwrite Content-Type here
@@ -68,7 +69,7 @@ func JSONError(w http.ResponseWriter, err interface{}, code int) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-//	json.NewEncoder(w).Encode(err)
+	//	json.NewEncoder(w).Encode(err)
 	fmt.Fprintln(w, err)
 }
 
@@ -96,8 +97,8 @@ func main() {
 
 	config, err = LoadConfiguration(*configFile)
 
-	workdir=config.CbsdEnv
-	server_url=config.ServerUrl
+	workdir = config.CbsdEnv
+	server_url = config.ServerUrl
 
 	if err != nil {
 		fmt.Println("config load error")
@@ -105,16 +106,16 @@ func main() {
 	}
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such Recomendation script, please check config/path: %s\n",config.Recomendation)
+		fmt.Printf("no such Recomendation script, please check config/path: %s\n", config.Recomendation)
 		os.Exit(1)
 	}
 	if !fileExists(config.Freejname) {
-		fmt.Printf("no such Freejname script, please check config/path: %s\n",config.Freejname)
+		fmt.Printf("no such Freejname script, please check config/path: %s\n", config.Freejname)
 		os.Exit(1)
 	}
 
 	if !fileExists(*dbDir) {
-		fmt.Printf("db dir created: %s\n",*dbDir)
+		fmt.Printf("db dir created: %s\n", *dbDir)
 		os.MkdirAll(*dbDir, 0770)
 	}
 
@@ -125,8 +126,8 @@ func main() {
 	router.HandleFunc("/api/v1/stop/{instanceid}", HandleClusterStop).Methods("GET")
 	router.HandleFunc("/api/v1/cluster", HandleClusterCluster).Methods("GET")
 	router.HandleFunc("/api/v1/destroy/{instanceid}", HandleClusterDestroy).Methods("GET")
-	fmt.Println("Listen",*listen)
-	fmt.Println("Server URL",server_url)
+	fmt.Println("Listen", *listen)
+	fmt.Println("Server URL", server_url)
 	log.Fatal(http.ListenAndServe(*listen, router))
 }
 
@@ -153,10 +154,10 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid,instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, instanceid)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file %s/var/db/api/map/map/%s-%s\n",workdir, Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/map/%s-%s\n", workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -169,7 +170,7 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -180,7 +181,7 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	SqliteDBPath := fmt.Sprintf("%s/%s/%s-bhyve.ssh", *dbDir, Cid,string(b))
+	SqliteDBPath := fmt.Sprintf("%s/%s/%s-bhyve.ssh", *dbDir, Cid, string(b))
 	if fileExists(SqliteDBPath) {
 		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
 		if err != nil {
@@ -227,13 +228,12 @@ func HandleClusterCluster(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 func realInstanceCreate(body string) {
 
 	a := &body
 
 	stdout, err := beanstalkSend(config.BeanstalkConfig, *a)
-	fmt.Printf("%s\n",stdout);
+	fmt.Printf("%s\n", stdout)
 
 	if err != nil {
 		return
@@ -246,35 +246,34 @@ func getNodeRecomendation(body string, offer string) {
 
 	var result string
 
-	if len(offer)>1 {
+	if len(offer) > 1 {
 		result = offer
-		fmt.Printf("FORCED Host Recomendation: [%s]\n",result)
+		fmt.Printf("FORCED Host Recomendation: [%s]\n", result)
 	} else {
-		cmdStr := fmt.Sprintf("%s %s", config.Recomendation,body)
+		cmdStr := fmt.Sprintf("%s %s", config.Recomendation, body)
 		cmdArgs := strings.Fields(cmdStr)
 		cmd := exec.Command(cmdArgs[0], cmdArgs[1:len(cmdArgs)]...)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-				fmt.Println("get recomendation script failed")
+			fmt.Println("get recomendation script failed")
 		}
 		result = (string(out))
 	}
-//	result := (string(out))
-	fmt.Printf("Host Recomendation: [%s]\n",result)
+	//	result := (string(out))
+	fmt.Printf("Host Recomendation: [%s]\n", result)
 
 	result = strings.Replace(result, ".", "_", -1)
 	result = strings.Replace(result, "-", "_", -1)
 
-	tube := fmt.Sprintf("cbsd_%s",result)
-	reply := fmt.Sprintf("cbsd_%s_result_id",result)
+	tube := fmt.Sprintf("cbsd_%s", result)
+	reply := fmt.Sprintf("cbsd_%s_result_id", result)
 
-	fmt.Printf("Tube selected: [%s]\n",tube)
-	fmt.Printf("ReplyTube selected: [%s]\n",reply)
+	fmt.Printf("Tube selected: [%s]\n", tube)
+	fmt.Printf("ReplyTube selected: [%s]\n", reply)
 
-	config.BeanstalkConfig.Tube=tube
-	config.BeanstalkConfig.ReplyTubePrefix=reply
+	config.BeanstalkConfig.Tube = tube
+	config.BeanstalkConfig.ReplyTubePrefix = reply
 }
-
 
 func getJname() string {
 	cmdStr := fmt.Sprintf("%s", config.Freejname)
@@ -282,10 +281,10 @@ func getJname() string {
 	cmd := exec.Command(cmdArgs[0], cmdArgs[1:len(cmdArgs)]...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-			fmt.Println("/root/api/get_recomendation.sg failed")
+		fmt.Println("/root/api/get_recomendation.sg failed")
 	}
 	result := (string(out))
-	fmt.Printf("Freejname Recomendation: [%s]\n",result)
+	fmt.Printf("Freejname Recomendation: [%s]\n", result)
 	return result
 }
 
@@ -324,7 +323,6 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	if r.Body == nil {
 		response := Response{"please send a request body"}
 		js, err := json.Marshal(response)
@@ -342,26 +340,26 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&vm)
 
 	switch vm.Type {
-		case "jail":
-			fmt.Println(vm.Type, "type selected")
-			runscript = *runScriptJail
-		case "bhyve":
-			fmt.Println(vm.Type, "type selected")
-			runscript = *runScriptBhyve
-		default:
-			fmt.Println("Unknown resource type:", vm.Type, "valid: 'bhyve', 'jail'")
-			response := Response{"unknown resource type"}
-			js, err := json.Marshal(response)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			http.Error(w, string(js), 400)
+	case "jail":
+		fmt.Println(vm.Type, "type selected")
+		runscript = *runScriptJail
+	case "bhyve":
+		fmt.Println(vm.Type, "type selected")
+		runscript = *runScriptBhyve
+	default:
+		fmt.Println("Unknown resource type:", vm.Type, "valid: 'bhyve', 'jail'")
+		response := Response{"unknown resource type"}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		http.Error(w, string(js), 400)
+		return
 	}
 
-	if ( len(vm.Pubkey)<30 ) {
-		fmt.Printf("Error: Pubkey too small: []\n",vm.Pubkey)
+	if len(vm.Pubkey) < 30 {
+		fmt.Printf("Error: Pubkey too small: []\n", vm.Pubkey)
 		response := Response{"Pubkey too small"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -372,7 +370,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ( len(vm.Pubkey)>1000 ) {
+	if len(vm.Pubkey) > 1000 {
 		response := Response{"Pubkey too long"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -382,7 +380,6 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, string(js), 400)
 		return
 	}
-
 
 	if !regexpPubkey.MatchString(vm.Pubkey) {
 		response := Response{"pubkey should be valid form. valid key: ssh-rsa,ssh-ed25519,ecdsa-*,ssh-dsa XXXXX comment"}
@@ -401,7 +398,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("pubKey: [%x]\n",parsedKey)
+	fmt.Printf("pubKey: [%x]\n", parsedKey)
 	uid := []byte(vm.Pubkey)
 
 	//existance?
@@ -413,10 +410,10 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		os.Mkdir(VmPathDir, 0775)
 	}
 
-	VmPath := fmt.Sprintf("%s/%x/vm-%s", *dbDir, cid,instanceid)
+	VmPath := fmt.Sprintf("%s/%x/vm-%s", *dbDir, cid, instanceid)
 
 	if fileExists(VmPath) {
-		fmt.Printf("vm already exist: [%s]\n",VmPath)
+		fmt.Printf("vm already exist: [%s]\n", VmPath)
 		response := Response{"vm already exist"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -427,7 +424,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("vm file not exist, create empty: [%s]\n",VmPath)
+	fmt.Printf("vm file not exist, create empty: [%s]\n", VmPath)
 	// create empty file
 	f, err := os.Create(VmPath)
 
@@ -435,10 +432,10 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		log.Fatal(err)
 	}
 
-	if ( len(vm.PkgList)>1 ) {
-		if (strings.Compare(vm.Type,"jail") == 0) {
+	if len(vm.PkgList) > 1 {
+		if strings.Compare(vm.Type, "jail") == 0 {
 			if !regexpPkgList.MatchString(vm.PkgList) {
-				fmt.Printf("Error: wrong pkglist: [%s]\n",vm.PkgList)
+				fmt.Printf("Error: wrong pkglist: [%s]\n", vm.PkgList)
 				response := Response{"pkglist should be valid form. valid form: [aA-zZ_]([aA-zZ0-9_])"}
 				js, err := json.Marshal(response)
 				if err != nil {
@@ -449,7 +446,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		} else {
-			fmt.Printf("Error: Pkglist for jail type only: [%s]\n",vm.Type)
+			fmt.Printf("Error: Pkglist for jail type only: [%s]\n", vm.Type)
 			response := Response{"Pubkey too small"}
 			js, err := json.Marshal(response)
 			if err != nil {
@@ -461,9 +458,9 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if ( len(vm.Extras)>1 ) {
+	if len(vm.Extras) > 1 {
 		if !regexpExtras.MatchString(vm.Extras) {
-			fmt.Printf("Error: wrong extras: [%s]\n",vm.Extras)
+			fmt.Printf("Error: wrong extras: [%s]\n", vm.Extras)
 			response := Response{"extras should be valid form. valid form: ^[a-zA-Z0-9:,]*$"}
 			js, err := json.Marshal(response)
 			if err != nil {
@@ -473,12 +470,12 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, string(js), 400)
 			return
 		} else {
-			fmt.Printf("Found extras: [%s]\n",vm.Extras)
+			fmt.Printf("Found extras: [%s]\n", vm.Extras)
 		}
 	}
 
-	if ( len(vm.Recomendation)>1 ) {
-		fmt.Printf("Found vm recomendation: [%s]\n",vm.Recomendation)
+	if len(vm.Recomendation) > 1 {
+		fmt.Printf("Found vm recomendation: [%s]\n", vm.Recomendation)
 		suggest = vm.Recomendation
 	} else {
 		suggest = ""
@@ -486,10 +483,10 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 
 	// not for jail yet
 
-	if (strings.Compare(vm.Type,"bhyve" ) == 0) {
+	if strings.Compare(vm.Type, "bhyve") == 0 {
 		// master value validation
 		cpus, err := strconv.Atoi(vm.Cpus)
-		fmt.Printf("C: [%s] [%d]\n",vm.Cpus, vm.Cpus)
+		fmt.Printf("C: [%s] [%d]\n", vm.Cpus, vm.Cpus)
 		if err != nil {
 			response := Response{"cpus not a number"}
 			js, err := json.Marshal(response)
@@ -511,10 +508,10 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		vm.Cpus="0"
+		vm.Cpus = "0"
 	}
 
-	if (strings.Compare(vm.Type,"bhyve" ) == 0) {
+	if strings.Compare(vm.Type, "bhyve") == 0 {
 		if !regexpSize.MatchString(vm.Ram) {
 			response := Response{"The ram should be valid form, 512m, 1g"}
 			js, err := json.Marshal(response)
@@ -526,7 +523,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		vm.Ram="0"
+		vm.Ram = "0"
 	}
 
 	if !regexpSize.MatchString(vm.Imgsize) {
@@ -541,7 +538,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	Jname := getJname()
-	fmt.Printf("GET NEXT FREE JNAME: [%s]\n",Jname)
+	fmt.Printf("GET NEXT FREE JNAME: [%s]\n", Jname)
 
 	_, err2 := f.WriteString(Jname)
 
@@ -557,7 +554,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	var jconf_param string
 	var str strings.Builder
 	var recomendation strings.Builder
-	// of course we can use marshal here instead of string concatenation, 
+	// of course we can use marshal here instead of string concatenation,
 	// but now this is too simple case/data without any processing
 	str.WriteString("{\"Command\":\"")
 	str.WriteString(runscript)
@@ -572,16 +569,16 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		typeField := val.Type().Field(i)
 		tag := typeField.Tag
 
-		tmpval := fmt.Sprintf("%s",valueField.Interface())
+		tmpval := fmt.Sprintf("%s", valueField.Interface())
 
 		if len(tmpval) == 0 {
 			continue
 		}
 
-		fmt.Printf("[%s]",valueField);
+		fmt.Printf("[%s]", valueField)
 
 		jconf_param = strings.ToLower(typeField.Name)
-		if strings.Compare(jconf_param,"jname") == 0 {
+		if strings.Compare(jconf_param, "jname") == 0 {
 			continue
 		}
 		fmt.Printf("jconf: %s,\tField Name: %s,\t Field Value: %v,\t Tag Value: %s\n", jconf_param, typeField.Name, valueField.Interface(), tag.Get("tag_name"))
@@ -593,20 +590,20 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 
 	str.WriteString(",\"host_hostname\": \"")
 
-	if ( len(vm.Host_hostname)>1 ) {
-		fmt.Printf("Found custom host_hostname: [%s]\n",vm.Host_hostname)
+	if len(vm.Host_hostname) > 1 {
+		fmt.Printf("Found custom host_hostname: [%s]\n", vm.Host_hostname)
 		str.WriteString(vm.Host_hostname)
 	} else {
 		str.WriteString(instanceid)
 	}
 
-	str.WriteString("\"}}");
-	fmt.Printf("C: [%s]\n",str.String())
+	str.WriteString("\"}}")
+	fmt.Printf("C: [%s]\n", str.String())
 	response := fmt.Sprintf("API:\ncurl -H \"cid:%x\" %s/api/v1/cluster\ncurl -H \"cid:%x\" %s/api/v1/status/%s\ncurl -H \"cid:%x\" %s/api/v1/start/%s\ncurl -H \"cid:%x\" %s/api/v1/stop/%s\ncurl -H \"cid:%x\" %s/api/v1/destroy/%s\n", cid, server_url, cid, server_url, instanceid, cid, server_url, instanceid, cid, server_url, instanceid, cid, server_url, instanceid)
-//	md5uid := cid
-//	response := string(md5uid[:])
+	//	md5uid := cid
+	//	response := string(md5uid[:])
 
-//	js, err := json.Marshal(response)
+	//	js, err := json.Marshal(response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -615,7 +612,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	getNodeRecomendation(recomendation.String(), suggest)
 	go realInstanceCreate(str.String())
 
-	mapfile := fmt.Sprintf("%s/var/db/api/map/%x-%s", workdir, cid,instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%x-%s", workdir, cid, instanceid)
 	m, err := os.Create(mapfile)
 
 	if err != nil {
@@ -634,7 +631,6 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 
 	return
 }
-
 
 func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 	var instanceid string
@@ -668,10 +664,10 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid,instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, instanceid)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -684,7 +680,7 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -695,7 +691,7 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("Destroy %s via %s/var/db/api/map/%x-%s\n",string(b), workdir, Cid, instanceid)
+	fmt.Printf("Destroy %s via %s/var/db/api/map/%x-%s\n", string(b), workdir, Cid, instanceid)
 
 	// of course we can use marshal here instead of string concatenation,
 	// but now this is too simple case/data without any processing
@@ -708,10 +704,10 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 	str.WriteString("\",\"CommandArgs\":{\"mode\":\"destroy\",\"jname\":\"")
 	str.WriteString(string(b))
 	str.WriteString("\"")
-	str.WriteString("}}");
+	str.WriteString("}}")
 
 	//get guest nodes & tubes
-	SqliteDBPath := fmt.Sprintf("%s/%s/%s.node", *dbDir, Cid,string(b))
+	SqliteDBPath := fmt.Sprintf("%s/%s/%s.node", *dbDir, Cid, string(b))
 	if fileExists(SqliteDBPath) {
 		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
 		if err != nil {
@@ -727,19 +723,18 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 			result := strings.Replace(string(b), ".", "_", -1)
 			result = strings.Replace(result, "-", "_", -1)
 			result = strings.TrimSuffix(result, "\n")
-		//	result = strings.Replace(result, "\r\n", "", -1)
+			//	result = strings.Replace(result, "\r\n", "", -1)
 
-			tube := fmt.Sprintf("cbsd_%s",result)
-			reply := fmt.Sprintf("cbsd_%s_result_id",result)
-
+			tube := fmt.Sprintf("cbsd_%s", result)
+			reply := fmt.Sprintf("cbsd_%s_result_id", result)
 
 			// result: srv-03.olevole.ru
-			config.BeanstalkConfig.Tube=tube
-			config.BeanstalkConfig.ReplyTubePrefix=reply
+			config.BeanstalkConfig.Tube = tube
+			config.BeanstalkConfig.ReplyTubePrefix = reply
 		}
 	} else {
 		response := Response{"unabe to open node map"}
-		fmt.Printf("uname to open node map: [%s]\n",SqliteDBPath)
+		fmt.Printf("uname to open node map: [%s]\n", SqliteDBPath)
 
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -750,35 +745,35 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("C: [%s]\n",str.String())
+	fmt.Printf("C: [%s]\n", str.String())
 	go realInstanceCreate(str.String())
 
 	e := os.Remove(mapfile)
-	if e != nil { 
-		log.Fatal(e) 
+	if e != nil {
+		log.Fatal(e)
 	}
 
 	// remove from FS
-	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir,Cid,instanceid)
+	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir, Cid, instanceid)
 	if fileExists(VmPath) {
 		b, err := ioutil.ReadFile(VmPath) // just pass the file name
 		if err != nil {
-			fmt.Printf("Error read UID from  [%s]\n",string(b))
+			fmt.Printf("Error read UID from  [%s]\n", string(b))
 		} else {
 
-			fmt.Printf("   REMOVE: %s\n",VmPath)
+			fmt.Printf("   REMOVE: %s\n", VmPath)
 			e = os.Remove(VmPath)
 
-			VmPath = fmt.Sprintf("%s/%s/%s.node", *dbDir,Cid,string(b))
-			fmt.Printf("   REMOVE: %s\n",VmPath)
+			VmPath = fmt.Sprintf("%s/%s/%s.node", *dbDir, Cid, string(b))
+			fmt.Printf("   REMOVE: %s\n", VmPath)
 			e = os.Remove(VmPath)
 
-			VmPath = fmt.Sprintf("%s/%s/%s-bhyve.ssh", *dbDir,Cid,string(b))
-			fmt.Printf("   REMOVE: %s\n",VmPath)
+			VmPath = fmt.Sprintf("%s/%s/%s-bhyve.ssh", *dbDir, Cid, string(b))
+			fmt.Printf("   REMOVE: %s\n", VmPath)
 			e = os.Remove(VmPath)
 
-			VmPath = fmt.Sprintf("%s/%s/vms/%s", *dbDir,Cid,string(b))
-			fmt.Printf("   REMOVE: %s\n",VmPath)
+			VmPath = fmt.Sprintf("%s/%s/vms/%s", *dbDir, Cid, string(b))
+			fmt.Printf("   REMOVE: %s\n", VmPath)
 			e = os.Remove(VmPath)
 		}
 	}
@@ -817,10 +812,10 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid,instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, instanceid)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -833,7 +828,7 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -844,7 +839,7 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("stop %s via %s/var/db/api/map/%s-%s\n",string(b), workdir, Cid, instanceid)
+	fmt.Printf("stop %s via %s/var/db/api/map/%s-%s\n", string(b), workdir, Cid, instanceid)
 
 	// of course we can use marshal here instead of string concatenation,
 	// but now this is too simple case/data without any processing
@@ -856,10 +851,10 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 	str.WriteString("\",\"CommandArgs\":{\"mode\":\"stop\",\"jname\":\"")
 	str.WriteString(string(b))
 	str.WriteString("\"")
-	str.WriteString("}}");
+	str.WriteString("}}")
 
 	//get guest nodes & tubes
-	SqliteDBPath := fmt.Sprintf("%s/%s/%s.node", *dbDir, Cid,string(b))
+	SqliteDBPath := fmt.Sprintf("%s/%s/%s.node", *dbDir, Cid, string(b))
 	if fileExists(SqliteDBPath) {
 		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
 		if err != nil {
@@ -869,17 +864,17 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 			result := strings.Replace(string(b), ".", "_", -1)
 			result = strings.Replace(result, "-", "_", -1)
 			result = strings.TrimSuffix(result, "\n")
-		//	result = strings.Replace(result, "\r\n", "", -1)
+			//	result = strings.Replace(result, "\r\n", "", -1)
 
-			tube := fmt.Sprintf("cbsd_%s",result)
-			reply := fmt.Sprintf("cbsd_%s_result_id",result)
+			tube := fmt.Sprintf("cbsd_%s", result)
+			reply := fmt.Sprintf("cbsd_%s_result_id", result)
 
-			fmt.Printf("Tube selected: [%s]\n",tube)
-			fmt.Printf("ReplyTube selected: [%s]\n",reply)
+			fmt.Printf("Tube selected: [%s]\n", tube)
+			fmt.Printf("ReplyTube selected: [%s]\n", reply)
 
 			// result: srv-03.olevole.ru
-			config.BeanstalkConfig.Tube=tube
-			config.BeanstalkConfig.ReplyTubePrefix=reply
+			config.BeanstalkConfig.Tube = tube
+			config.BeanstalkConfig.ReplyTubePrefix = reply
 		}
 	} else {
 		response := Response{"nodes node found"}
@@ -892,15 +887,15 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("C: [%s]\n",str.String())
+	fmt.Printf("C: [%s]\n", str.String())
 	go realInstanceCreate(str.String())
 
 	// remove from FS
-	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir, Cid,instanceid)
+	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir, Cid, instanceid)
 	if fileExists(VmPath) {
 		b, err := ioutil.ReadFile(VmPath) // just pass the file name
 		if err != nil {
-			fmt.Printf("Error read UID from  [%s]\n",string(b))
+			fmt.Printf("Error read UID from  [%s]\n", string(b))
 		}
 	}
 
@@ -914,7 +909,6 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-
 func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 	var instanceid string
 	params := mux.Vars(r)
@@ -922,7 +916,7 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
 
 	Cid := r.Header.Get("cid")
-	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir,Cid)
+	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
 		return
 	}
@@ -939,10 +933,10 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid,instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, instanceid)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -955,7 +949,7 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n",workdir, Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -966,7 +960,7 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("start %s via %s/var/db/api/map/%s-%s\n",string(b), workdir, Cid, instanceid)
+	fmt.Printf("start %s via %s/var/db/api/map/%s-%s\n", string(b), workdir, Cid, instanceid)
 
 	// of course we can use marshal here instead of string concatenation,
 	// but now this is too simple case/data without any processing
@@ -978,10 +972,10 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 	str.WriteString("\",\"CommandArgs\":{\"mode\":\"start\",\"jname\":\"")
 	str.WriteString(string(b))
 	str.WriteString("\"")
-	str.WriteString("}}");
+	str.WriteString("}}")
 
 	//get guest nodes & tubes
-	SqliteDBPath := fmt.Sprintf("%s/%s/%s.node", *dbDir,Cid,string(b))
+	SqliteDBPath := fmt.Sprintf("%s/%s/%s.node", *dbDir, Cid, string(b))
 	if fileExists(SqliteDBPath) {
 		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
 		if err != nil {
@@ -991,17 +985,17 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 			result := strings.Replace(string(b), ".", "_", -1)
 			result = strings.Replace(result, "-", "_", -1)
 			result = strings.TrimSuffix(result, "\n")
-		//	result = strings.Replace(result, "\r\n", "", -1)
+			//	result = strings.Replace(result, "\r\n", "", -1)
 
-			tube := fmt.Sprintf("cbsd_%s",result)
-			reply := fmt.Sprintf("cbsd_%s_result_id",result)
+			tube := fmt.Sprintf("cbsd_%s", result)
+			reply := fmt.Sprintf("cbsd_%s_result_id", result)
 
-			fmt.Printf("Tube selected: [%s]\n",tube)
-			fmt.Printf("ReplyTube selected: [%s]\n",reply)
+			fmt.Printf("Tube selected: [%s]\n", tube)
+			fmt.Printf("ReplyTube selected: [%s]\n", reply)
 
 			// result: srv-03.olevole.ru
-			config.BeanstalkConfig.Tube=tube
-			config.BeanstalkConfig.ReplyTubePrefix=reply
+			config.BeanstalkConfig.Tube = tube
+			config.BeanstalkConfig.ReplyTubePrefix = reply
 		}
 	} else {
 		response := Response{"nodes node found"}
@@ -1014,15 +1008,15 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("C: [%s]\n",str.String())
+	fmt.Printf("C: [%s]\n", str.String())
 	go realInstanceCreate(str.String())
 
 	// remove from FS
-	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir,Cid,instanceid)
+	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir, Cid, instanceid)
 	if fileExists(VmPath) {
 		b, err := ioutil.ReadFile(VmPath) // just pass the file name
 		if err != nil {
-			fmt.Printf("Error read UID from  [%s]\n",string(b))
+			fmt.Printf("Error read UID from  [%s]\n", string(b))
 		}
 	}
 
@@ -1035,4 +1029,3 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, string(js), 200)
 	return
 }
-

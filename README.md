@@ -21,8 +21,7 @@ Setup api.d module: make sure
     "recomendation": "/usr/local/cbsd/modules/api.d/misc/recomendation.sh",
     "freejname": "/usr/local/cbsd/modules/api.d/misc/freejname.sh",
 
-script works!
-
+script works (from cbsd user): chown cbsd:cbsd ~cbsd/etc/api.conf
 
 # On host
 

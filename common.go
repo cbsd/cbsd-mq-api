@@ -3,9 +3,9 @@ package main
 import "time"
 
 type Comment struct {
-	Command string
-	JobID uint64
-	Date time.Time
+	Command     string
+	JobID       uint64
+	Date        time.Time
 	CommandArgs map[string]string
 }
 
@@ -20,6 +20,6 @@ type CommentProcessor interface {
 
 type CbsdTask struct {
 	Progress int
-	ErrCode int
-	Message string
+	ErrCode  int
+	Message  string
 }
