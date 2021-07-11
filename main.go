@@ -120,12 +120,12 @@ func main() {
 	}
 
 	router := mux.NewRouter()
-	router.HandleFunc("/api/v1/create/{instanceid}", HandleClusterCreate).Methods("POST")
-	router.HandleFunc("/api/v1/status/{instanceid}", HandleClusterStatus).Methods("GET")
-	router.HandleFunc("/api/v1/start/{instanceid}", HandleClusterStart).Methods("GET")
-	router.HandleFunc("/api/v1/stop/{instanceid}", HandleClusterStop).Methods("GET")
+	router.HandleFunc("/api/v1/create/{InstanceId}", HandleClusterCreate).Methods("POST")
+	router.HandleFunc("/api/v1/status/{InstanceId}", HandleClusterStatus).Methods("GET")
+	router.HandleFunc("/api/v1/start/{InstanceId}", HandleClusterStart).Methods("GET")
+	router.HandleFunc("/api/v1/stop/{InstanceId}", HandleClusterStop).Methods("GET")
 	router.HandleFunc("/api/v1/cluster", HandleClusterCluster).Methods("GET")
-	router.HandleFunc("/api/v1/destroy/{instanceid}", HandleClusterDestroy).Methods("GET")
+	router.HandleFunc("/api/v1/destroy/{InstanceId}", HandleClusterDestroy).Methods("GET")
 	fmt.Println("Listen", *listen)
 	fmt.Println("Server URL", server_url)
 	log.Fatal(http.ListenAndServe(*listen, router))
@@ -141,11 +141,29 @@ func validateCid(Cid string) bool {
 	}
 }
 
+func validateInstanceId(InstanceId string) bool {
+	var regexpInstanceId = regexp.MustCompile("^[a-z_]([a-z0-9_])*$")
+
+	if len(InstanceId) < 1 || len(InstanceId) > 40 {
+		return false
+	}
+
+	if regexpInstanceId.MatchString(InstanceId) {
+		return true
+	} else {
+		return false
+	}
+}
+
 func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
-	var instanceid string
+	var InstanceId string
 	params := mux.Vars(r)
-	instanceid = params["instanceid"]
-	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
+
+	InstanceId = params["InstanceId"]
+	if !validateInstanceId(InstanceId) {
+		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", 400)
+		return
+	}
 
 	Cid := r.Header.Get("cid")
 	if !validateCid(Cid) {
@@ -154,25 +172,14 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
-	//fmt.Println("CID IS: [ %s ]", cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
 		return
 	}
 
-	// check the name field is between 3 to 40 chars
-	if len(instanceid) < 1 || len(instanceid) > 40 {
-		JSONError(w, "The instance name must be between 1-40", 400)
-		return
-	}
-	if !regexpInstanceId.MatchString(instanceid) {
-		JSONError(w, "The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$", 400)
-		return
-	}
-
-	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, InstanceId)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file %s/var/db/api/map/map/%s-%s\n", workdir, Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/map/%s-%s\n", workdir, Cid, InstanceId)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -185,7 +192,7 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -309,10 +316,15 @@ func getJname() string {
 }
 
 func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
-	var instanceid string
+	var InstanceId string
 	params := mux.Vars(r)
-	instanceid = params["instanceid"]
-	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
+
+	InstanceId = params["InstanceId"]
+	if !validateInstanceId(InstanceId) {
+		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", 400)
+		return
+	}
+
 	var regexpPkgList = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_ ])*$`)
 	var regexpExtras = regexp.MustCompile("^[a-zA-Z0-9:,]*$")
 	var regexpSize = regexp.MustCompile(`^[1-9](([0-9]+)?)([m|g|t])$`)
@@ -320,28 +332,6 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	var suggest string
 
 	w.Header().Set("Content-Type", "application/json")
-
-	// check the name field is between 3 to 40 chars
-	if len(instanceid) < 2 || len(instanceid) > 40 {
-		response := Response{"The instance name must be between 2-40"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 400)
-		return
-	}
-	if !regexpInstanceId.MatchString(instanceid) {
-		response := Response{"The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$"}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		http.Error(w, string(js), 400)
-		return
-	}
 
 	if r.Body == nil {
 		response := Response{"please send a request body"}
@@ -430,7 +420,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		os.Mkdir(VmPathDir, 0775)
 	}
 
-	VmPath := fmt.Sprintf("%s/%x/vm-%s", *dbDir, cid, instanceid)
+	VmPath := fmt.Sprintf("%s/%x/vm-%s", *dbDir, cid, InstanceId)
 
 	if fileExists(VmPath) {
 		fmt.Printf("vm already exist: [%s]\n", VmPath)
@@ -568,7 +558,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 
 	f.Close()
 
-	vm.Jname = instanceid
+	vm.Jname = InstanceId
 	val := reflect.ValueOf(vm)
 
 	var jconf_param string
@@ -614,12 +604,12 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Found custom host_hostname: [%s]\n", vm.Host_hostname)
 		str.WriteString(vm.Host_hostname)
 	} else {
-		str.WriteString(instanceid)
+		str.WriteString(InstanceId)
 	}
 
 	str.WriteString("\"}}")
 	fmt.Printf("C: [%s]\n", str.String())
-	response := fmt.Sprintf("API:\ncurl -H \"cid:%x\" %s/api/v1/cluster\ncurl -H \"cid:%x\" %s/api/v1/status/%s\ncurl -H \"cid:%x\" %s/api/v1/start/%s\ncurl -H \"cid:%x\" %s/api/v1/stop/%s\ncurl -H \"cid:%x\" %s/api/v1/destroy/%s\n", cid, server_url, cid, server_url, instanceid, cid, server_url, instanceid, cid, server_url, instanceid, cid, server_url, instanceid)
+	response := fmt.Sprintf("API:\ncurl -H \"cid:%x\" %s/api/v1/cluster\ncurl -H \"cid:%x\" %s/api/v1/status/%s\ncurl -H \"cid:%x\" %s/api/v1/start/%s\ncurl -H \"cid:%x\" %s/api/v1/stop/%s\ncurl -H \"cid:%x\" %s/api/v1/destroy/%s\n", cid, server_url, cid, server_url, InstanceId, cid, server_url, InstanceId, cid, server_url, InstanceId, cid, server_url, InstanceId)
 	//	md5uid := cid
 	//	response := string(md5uid[:])
 
@@ -632,7 +622,7 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	getNodeRecomendation(recomendation.String(), suggest)
 	go realInstanceCreate(str.String())
 
-	mapfile := fmt.Sprintf("%s/var/db/api/map/%x-%s", workdir, cid, instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%x-%s", workdir, cid, InstanceId)
 	m, err := os.Create(mapfile)
 
 	if err != nil {
@@ -653,10 +643,14 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
-	var instanceid string
+	var InstanceId string
 	params := mux.Vars(r)
-	instanceid = params["instanceid"]
-	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
+
+	InstanceId = params["InstanceId"]
+	if !validateInstanceId(InstanceId) {
+		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", 400)
+		return
+	}
 
 	Cid := r.Header.Get("cid")
 	if !validateCid(Cid) {
@@ -678,21 +672,10 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-
-	// check the name field is between 1 to 40 chars
-	if len(instanceid) < 1 || len(instanceid) > 40 {
-		http.Error(w, "The instance name must be between 1-40", 400)
-		return
-	}
-	if !regexpInstanceId.MatchString(instanceid) {
-		http.Error(w, "The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$", 400)
-		return
-	}
-
-	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, InstanceId)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -705,7 +688,7 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -716,7 +699,7 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("Destroy %s via %s/var/db/api/map/%x-%s\n", string(b), workdir, Cid, instanceid)
+	fmt.Printf("Destroy %s via %s/var/db/api/map/%x-%s\n", string(b), workdir, Cid, InstanceId)
 
 	// of course we can use marshal here instead of string concatenation,
 	// but now this is too simple case/data without any processing
@@ -779,7 +762,7 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// remove from FS
-	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir, Cid, instanceid)
+	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir, Cid, InstanceId)
 	if fileExists(VmPath) {
 		b, err := ioutil.ReadFile(VmPath) // just pass the file name
 		if err != nil {
@@ -814,10 +797,14 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
-	var instanceid string
+	var InstanceId string
 	params := mux.Vars(r)
-	instanceid = params["instanceid"]
-	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
+
+	InstanceId = params["InstanceId"]
+	if !validateInstanceId(InstanceId) {
+		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", 400)
+		return
+	}
 
 	Cid := r.Header.Get("cid")
 	if !validateCid(Cid) {
@@ -831,21 +818,10 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-
-	// check the name field is between 1 to 40 chars
-	if len(instanceid) < 1 || len(instanceid) > 40 {
-		http.Error(w, "The instance name must be between 1-40", 400)
-		return
-	}
-	if !regexpInstanceId.MatchString(instanceid) {
-		http.Error(w, "The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$", 400)
-		return
-	}
-
-	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, InstanceId)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -858,7 +834,7 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -869,7 +845,7 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("stop %s via %s/var/db/api/map/%s-%s\n", string(b), workdir, Cid, instanceid)
+	fmt.Printf("stop %s via %s/var/db/api/map/%s-%s\n", string(b), workdir, Cid, InstanceId)
 
 	// of course we can use marshal here instead of string concatenation,
 	// but now this is too simple case/data without any processing
@@ -921,7 +897,7 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 	go realInstanceCreate(str.String())
 
 	// remove from FS
-	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir, Cid, instanceid)
+	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir, Cid, InstanceId)
 	if fileExists(VmPath) {
 		b, err := ioutil.ReadFile(VmPath) // just pass the file name
 		if err != nil {
@@ -940,10 +916,14 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
-	var instanceid string
+	var InstanceId string
 	params := mux.Vars(r)
-	instanceid = params["instanceid"]
-	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
+
+	InstanceId = params["InstanceId"]
+	if !validateInstanceId(InstanceId) {
+		JSONError(w, "The InstanceId should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 40)", 400)
+		return
+	}
 
 	Cid := r.Header.Get("cid")
 	if !validateCid(Cid) {
@@ -957,21 +937,10 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-
-	// check the name field is between 1 to 40 chars
-	if len(instanceid) < 1 || len(instanceid) > 40 {
-		http.Error(w, "The instance name must be between 1-40", 400)
-		return
-	}
-	if !regexpInstanceId.MatchString(instanceid) {
-		http.Error(w, "The instance name should be valid form, ^[aA-zZ_]([aA-zZ0-9_])*$", 400)
-		return
-	}
-
-	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, instanceid)
+	mapfile := fmt.Sprintf("%s/var/db/api/map/%s-%s", workdir, Cid, InstanceId)
 
 	if !fileExists(config.Recomendation) {
-		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
+		fmt.Printf("no such map file %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -984,7 +953,7 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadFile(mapfile) // just pass the file name
 	if err != nil {
-		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, instanceid)
+		fmt.Printf("unable to read jname from %s/var/db/api/map/%s-%s\n", workdir, Cid, InstanceId)
 		response := Response{"no found"}
 		js, err := json.Marshal(response)
 		if err != nil {
@@ -995,7 +964,7 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("start %s via %s/var/db/api/map/%s-%s\n", string(b), workdir, Cid, instanceid)
+	fmt.Printf("start %s via %s/var/db/api/map/%s-%s\n", string(b), workdir, Cid, InstanceId)
 
 	// of course we can use marshal here instead of string concatenation,
 	// but now this is too simple case/data without any processing
@@ -1047,7 +1016,7 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 	go realInstanceCreate(str.String())
 
 	// remove from FS
-	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir, Cid, instanceid)
+	VmPath := fmt.Sprintf("%s/%s/vm-%s", *dbDir, Cid, InstanceId)
 	if fileExists(VmPath) {
 		b, err := ioutil.ReadFile(VmPath) // just pass the file name
 		if err != nil {
