@@ -131,6 +131,16 @@ func main() {
 	log.Fatal(http.ListenAndServe(*listen, router))
 }
 
+func validateCid(Cid string) bool {
+	var regexpCid = regexp.MustCompile("^[a-f0-9]{32}$")
+
+	if regexpCid.MatchString(Cid) {
+		return true
+	} else {
+		return false
+	}
+}
+
 func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	var instanceid string
 	params := mux.Vars(r)
@@ -138,6 +148,11 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
 
 	Cid := r.Header.Get("cid")
+	if !validateCid(Cid) {
+		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", 400)
+		return
+	}
+
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	//fmt.Println("CID IS: [ %s ]", cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
@@ -207,6 +222,11 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 
 func HandleClusterCluster(w http.ResponseWriter, r *http.Request) {
 	Cid := r.Header.Get("cid")
+	if !validateCid(Cid) {
+		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", 400)
+		return
+	}
+
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	//fmt.Println("CID IS: [ %s ]", cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
@@ -639,6 +659,11 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
 
 	Cid := r.Header.Get("cid")
+	if !validateCid(Cid) {
+		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", 400)
+		return
+	}
+
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
 		fmt.Println("path not found:", HomePath)
@@ -795,6 +820,11 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
 
 	Cid := r.Header.Get("cid")
+	if !validateCid(Cid) {
+		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", 400)
+		return
+	}
+
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
 		return
@@ -916,6 +946,11 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 	var regexpInstanceId = regexp.MustCompile(`^[aA-zZ_]([aA-zZ0-9_])*$`)
 
 	Cid := r.Header.Get("cid")
+	if !validateCid(Cid) {
+		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", 400)
+		return
+	}
+
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
 		return
