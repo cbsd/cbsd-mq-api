@@ -349,6 +349,10 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	var regexpExtras = regexp.MustCompile("^[a-zA-Z0-9:,]*$")
 	var regexpSize = regexp.MustCompile(`^[1-9](([0-9]+)?)([m|g|t])$`)
 	var regexpPubkey = regexp.MustCompile("^(ssh-rsa|ssh-dss|ssh-ed25519|ecdsa-[^ ]+) ([^ ]+) ?(.*)")
+	var regexpParamName = regexp.MustCompile(`^[a-z_]+$`)
+	var regexpParamVal = regexp.MustCompile(`^[aA-zZ0-9_\-. ]+$`)
+	var regexpHostName = regexp.MustCompile(`^[aA-zZ0-9_\-\.]+$`)
+
 	var suggest string
 
 	if r.Body == nil {
@@ -447,6 +451,16 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if len(vm.Host_hostname) > 1 {
+		if !regexpHostName.MatchString(vm.Host_hostname) {
+			fmt.Printf("Error: wrong hostname: [%s]\n", vm.Host_hostname)
+			JSONError(w, "host_hostname should be valid form. valid form", http.StatusInternalServerError)
+			return
+		} else {
+			fmt.Printf("Found host_hostname: [%s]\n", vm.Host_hostname)
+		}
+	}
+
 	if len(vm.Extras) > 1 {
 		if !regexpExtras.MatchString(vm.Extras) {
 			fmt.Printf("Error: wrong extras: [%s]\n", vm.Extras)
@@ -458,8 +472,14 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(vm.Recomendation) > 1 {
-		fmt.Printf("Found vm recomendation: [%s]\n", vm.Recomendation)
-		suggest = vm.Recomendation
+		if !regexpHostName.MatchString(vm.Recomendation) {
+			fmt.Printf("Error: wrong hostname recomendation: [%s]\n", vm.Recomendation)
+			JSONError(w, "recomendation should be valid form. valid form", http.StatusInternalServerError)
+			return
+		} else {
+			fmt.Printf("Found vm recomendation: [%s]\n", vm.Recomendation)
+			suggest = vm.Recomendation
+		}
 	} else {
 		suggest = ""
 	}
@@ -538,12 +558,46 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		if len(tmpval) == 0 {
 			continue
 		}
+		if len(tmpval) > 1000 {
+			fmt.Printf("Error: param val too long\n")
+			continue
+		}
 
-		fmt.Printf("[%s]", valueField)
+		fmt.Printf("[%s]\n", valueField)
+
+		if len(typeField.Name) > 30 {
+			fmt.Printf("Error: param name too long\n")
+			continue
+		}
 
 		jconf_param = strings.ToLower(typeField.Name)
+
 		if strings.Compare(jconf_param, "jname") == 0 {
 			continue
+		}
+
+
+		if !regexpParamName.MatchString(jconf_param) {
+			fmt.Printf("Error: wrong paramname: [%s]\n",jconf_param)
+			continue
+		} else {
+			fmt.Printf("paramname test passed: [%s]\n",jconf_param)
+		}
+
+		// validate unknown data values
+		switch jconf_param {
+		case "type":
+		case "imgsize":
+		case "ram":
+		case "cpus":
+		case "pkglist":
+		case "pubkey":
+		case "host_hostname":
+		default:
+			if !regexpParamVal.MatchString(tmpval) {
+				fmt.Printf("Error: wrong paramval for %s: [%s]\n",jconf_param,tmpval)
+				continue
+			}
 		}
 
 		fmt.Printf("jconf: %s,\tField Name: %s,\t Field Value: %v,\t Tag Value: %s\n", jconf_param, typeField.Name, valueField.Interface(), tag.Get("tag_name"))
@@ -556,8 +610,6 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	str.WriteString(",\"host_hostname\": \"")
 
 	if len(vm.Host_hostname) > 1 {
-		// todo: filter for insecured param=val
-		fmt.Printf("Found custom host_hostname: [%s]\n", vm.Host_hostname)
 		str.WriteString(vm.Host_hostname)
 	} else {
 		str.WriteString(InstanceId)
