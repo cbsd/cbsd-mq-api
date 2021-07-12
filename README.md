@@ -82,7 +82,9 @@ echo 'api.d' >> ~cbsd/etc/modules.conf
 cbsd initenv
 ```
 
-7) Configure CBSD API module:
+7) Configure CBSD API module.
+
+Copy configuration sample to work dir:
 ```
 cp -a /usr/local/cbsd/modules/api.d/etc/api.conf ~cbsd/etc/
 cp -a /usr/local/cbsd/modules/api.d/etc/bhyve-api.conf ~cbsd/etc/
