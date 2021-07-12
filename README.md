@@ -133,7 +133,7 @@ curl -H "cid:<cid>" http://127.0.0.1:65531/api/v1/start/<env>
 curl -H "cid:<cid>" http://127.0.0.1:65531/api/v1/stop/<env>
 curl -H "cid:<cid>" http://127.0.0.1:65531/api/v1/destroy/<env>
 ```
-Where <cid> is your token/namespace. For convenience, in a *private cluster*, 
+Where `<cid>` is your token/namespace. For convenience, in a *private cluster*, 
 we suggest using md5 hash of your public key as <cid>.
 To test, lets create simple CBSDfile, where CLOUD_KEY - is your publickey string:
 ```
