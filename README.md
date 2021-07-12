@@ -28,14 +28,17 @@ however you can use any number of physical nodes for single API.
 pkg install -y cbsd cbsd-mq-router cbsd-mq-api beanstalkd git
 ```
 
-2) Configure beanstalkd service:
+2) Configure beanstalkd, the broker service.
+
+  Since all services are on the same server, we will specify the address 127.0.0.1 
+  for incoming connections and start the service:
 ```
 sysrc beanstalkd_flags="-l 127.0.0.1 -p 11300"
 service beanstalkd enable
 service beanstalkd restart
 ```
 
-3) Configure CBSD as usual
+3) Configure CBSD as usual:
 ```
 env workdir=/usr/jails /usr/local/cbsd/sudoexec/initenv
 ```
@@ -45,9 +48,8 @@ env workdir=/usr/jails /usr/local/cbsd/sudoexec/initenv
 First, get hoster FQDN via `hostname` command.
 Let's say your host has a name: apitest.my.domain
 
-Open /usr/local/etc/cbsd-mq-router.json in any favorite editor and change
-"tube" and "reply_tube_prefix" ( cbsd_<hostname_without_dot> and cbsd_<hostname_without_dot>_result_id ), e.g:
-
+Open /usr/local/etc/cbsd-mq-router.json in any favorite editor and set
+"tube" and "reply_tube_prefix" params ( cbsd_<hostname_without_dot> and cbsd_<hostname_without_dot>_result_id ), e.g:
 
 ```
 {
@@ -153,7 +155,7 @@ cbsd jlogin
 cbsd destroy
 ```
 
-See documentation for detailed information.
+See documentation for detailed information and additional examples: [https://www.bsdstore.ru/en/cbsd_api_ssi.html](https://www.bsdstore.ru/en/cbsd_api_ssi.html)
 
 ## Contributing
 
