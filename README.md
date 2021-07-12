@@ -46,7 +46,7 @@ First, get hoster FQDN via `hostname` command.
 Let's say your host has a name: apitest.my.domain
 
 Open /usr/local/etc/cbsd-mq-router.json in any favorite editor and change
-"tube" and "reply_tube_prefix" ( cbsd_<hostname_without_dot> and cbsd_<hostname_without_dot>_result_id, e.g::
+"tube" and "reply_tube_prefix" ( cbsd_<hostname_without_dot> and cbsd_<hostname_without_dot>_result_id ), e.g:
 
 
 ```
