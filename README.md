@@ -151,7 +151,8 @@ sudo cbsd up
 
 After jail start you can use:
 ```
-cbsd jlogin
+cbsd login
+cbsd status
 cbsd destroy
 ```
 
