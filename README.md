@@ -67,8 +67,6 @@ Open /usr/local/etc/cbsd-mq-router.json in any favorite editor and change
 }
 ```
 
-## Usage
-
 5) Start MQ router:
 ```
 service cbsd-mq-router enable
