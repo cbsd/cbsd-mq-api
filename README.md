@@ -91,7 +91,7 @@ cp -a /usr/local/cbsd/modules/api.d/etc/bhyve-api.conf ~cbsd/etc/
 cp -a /usr/local/cbsd/modules/api.d/etc/jail-api.conf ~cbsd/etc/
 ```
 
-Open ~cbsd/etc/api.conf in any favorite editor and set "server_list=" to FQDN, e.g:
+Open ~cbsd/etc/api.conf in any favorite editor and set "server_list=" to server FQDN, e.g:
 ```
 ...
 server_list="apitest.my.domain"
