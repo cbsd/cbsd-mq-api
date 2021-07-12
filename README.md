@@ -98,7 +98,7 @@ server_list="apitest.my.domain"
 ...
 ```
 
-Set 'cbsd' user permission to ~cbsd/etc/api.conf:
+Set 'cbsd' user permission for ~cbsd/etc/api.conf file:
 ```
 chown cbsd:cbsd ~cbsd/etc/api.conf
 ```
