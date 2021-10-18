@@ -125,6 +125,10 @@ func main() {
 		fmt.Printf("no such Freejname script, please check config/path: %s\n", config.Freejname)
 		os.Exit(1)
 	}
+	if !fileExists(config.Cloud_images_list) {
+		fmt.Printf("no such cloud_images_list script, please check config/path: %s\n", config.Cloud_images_list)
+		os.Exit(1)
+	}
 
 	if !fileExists(*dbDir) {
 		fmt.Printf("db dir created: %s\n", *dbDir)
@@ -137,6 +141,7 @@ func main() {
 	router.HandleFunc("/api/v1/start/{InstanceId}", HandleClusterStart).Methods("GET")
 	router.HandleFunc("/api/v1/stop/{InstanceId}", HandleClusterStop).Methods("GET")
 	router.HandleFunc("/api/v1/cluster", HandleClusterCluster).Methods("GET")
+	router.HandleFunc("/api/v1/images", HandleClusterImages).Methods("GET")
 	router.HandleFunc("/api/v1/destroy/{InstanceId}", HandleClusterDestroy).Methods("GET")
 	fmt.Println("Listen", *listen)
 	fmt.Println("Server URL", server_url)
@@ -273,6 +278,27 @@ func HandleClusterCluster(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+
+func HandleClusterImages(w http.ResponseWriter, r *http.Request) {
+	if fileExists(config.Cloud_images_list) {
+		b, err := ioutil.ReadFile(config.Cloud_images_list) // just pass the file name
+		if err != nil {
+			JSONError(w, "", http.StatusNotFound)
+			return
+		} else {
+			// already in json - send as-is
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(200)
+			http.Error(w, string(b), 200)
+			return
+		}
+	} else {
+		JSONError(w, "", http.StatusNotFound)
+		return
+	}
+}
+
 func realInstanceCreate(body string) {
 
 	a := &body
@@ -360,7 +386,10 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("create wakeup")
+	// MAINTENANCE. Todo: into config
+	//fmt.Println("create wakeup, maintenance on")
+	//JSONError(w, "Сreation is temporarily blocked - platform is under maintenance", http.StatusInternalServerError)
+	//return
 
 	var vm Vm
 	_ = json.NewDecoder(r.Body).Decode(&vm)

@@ -6,6 +6,8 @@
     "recomendation": "/usr/local/cbsd/modules/api.d/misc/recomendation.sh",
     "freejname": "/usr/local/cbsd/modules/api.d/misc/freejname.sh",
     "server_url": "https://127.0.0.1",
+    "cloud_images_list": "/usr/local/etc/cbsd_api_cloud_images.json",
+    "iso_images_list": "/usr/local/etc/cbsd_api_iso_images.json",
     "beanstalkd": {
       "uri": "127.0.0.1:11300",
       "tube": "cbsd_zpool1",
@@ -16,4 +18,3 @@
       "logdir": "/var/log/cbsdmq"
     }
 }
-
