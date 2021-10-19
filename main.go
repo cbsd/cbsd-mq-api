@@ -141,7 +141,7 @@ func main() {
 	router.HandleFunc("/api/v1/start/{InstanceId}", HandleClusterStart).Methods("GET")
 	router.HandleFunc("/api/v1/stop/{InstanceId}", HandleClusterStop).Methods("GET")
 	router.HandleFunc("/api/v1/cluster", HandleClusterCluster).Methods("GET")
-	router.HandleFunc("/api/v1/images", HandleClusterImages).Methods("GET")
+	router.HandleFunc("/images", HandleClusterImages).Methods("GET")
 	router.HandleFunc("/api/v1/destroy/{InstanceId}", HandleClusterDestroy).Methods("GET")
 	fmt.Println("Listen", *listen)
 	fmt.Println("Server URL", server_url)
