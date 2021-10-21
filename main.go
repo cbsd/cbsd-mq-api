@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"io"
 
 	"github.com/gorilla/mux"
 	"golang.org/x/crypto/ssh"
@@ -61,7 +62,47 @@ var (
 	stopScript             = flag.String("stop_script", "control-api", "CBSD target run script")
 	serverUrl              = flag.String("server_url", "http://127.0.0.1:65532", "Server URL for external requests")
 	dbDir                  = flag.String("dbdir", "/var/db/cbsd-api", "db root dir")
+	allowListFile          = flag.String("allowlist", "/usr/local/etc/cbsd-mq-api.allow", "Path to PubKey whitelist")
 )
+
+type AllowList struct {
+	keyType	string
+	key	string
+	comment	string
+	cid	string
+	next	*AllowList	// link to the next records
+}
+
+// linked struct
+type Feed struct {
+	length  int
+	start   *AllowList
+}
+
+type MyFeeds struct {
+	f *Feed
+}
+
+func (f *Feed) Append(newAllow *AllowList) {
+	if f.length == 0 {
+		f.start = newAllow
+	} else {
+		currentPost := f.start
+		for currentPost.next != nil {
+			currentPost = currentPost.next
+		}
+		currentPost.next = newAllow
+	}
+	f.length++
+}
+
+func newAllow(keyType string, key string, comment string) *AllowList {
+	np := AllowList{keyType: keyType, key: key, comment: comment}
+//	np.Response = ""
+//	np.Time = 0
+	return &np
+}
+
 
 // we need overwrite Content-Type here
 // https://stackoverflow.com/questions/59763852/can-you-return-json-in-golang-http-error
@@ -131,8 +172,68 @@ func main() {
 		os.MkdirAll(*dbDir, 0770)
 	}
 
+
+	// WhiteList
+	if !fileExists(*allowListFile) {
+		fmt.Printf("no such allowList file, please check config/path: %s\n", allowListFile)
+		os.Exit(1)
+	}
+	f := &Feed{}
+//	var p *AllowList
+	// loadconfig
+	fd, err := os.Open(*allowListFile)
+	if err != nil {
+		panic(err)
+	}
+	defer fd.Close()
+
+	var keyType string
+	var key string
+	var comment string
+
+
+
+	for {
+		_, err := fmt.Fscanf(fd,"%s %s %s",&keyType,&key,&comment)
+		if err != nil {
+			if err != io.EOF {
+				//log.Fatal(err)
+				break
+			}
+		}
+		fmt.Printf("loaded: [%s %s %s]\n", keyType, key, comment)
+		p := newAllow(keyType,key,comment)
+		f.Append(p)
+	}
+
+	fd.Close()
+
+	fmt.Printf("AllowList Length: %v\n", f.length)
+//	currentAllow := f.start
+
+	var p *AllowList
+	for i := 0; i < f.length; i++ {
+		currentAllow := f.start
+		p = currentAllow
+		currentAllow = currentAllow.next
+		ResultKeyType := (string(p.keyType))
+		fmt.Println("ResultType: ", ResultKeyType)
+//                        if len(ResultAlias) < 1 {
+//                                ResultNameserver := (string(p.NameServer))
+//                                ResultNameserver = strings.Replace(ResultNameserver, ".", "_", -1)
+//                                ResultAlias = strings.Replace(ResultNameserver, ":", "_", -1)
+//                        }
+//                
+//                        Result := fmt.Sprintf("check_dns_%s_%s: %d",ResultHost,ResultAlias,p.Time)
+//                        fmt.Println(Result)
+	}
+
+	// setup: we need to pass Feed into handler function
+	feeds := &MyFeeds{ f: f }
+
 	router := mux.NewRouter()
-	router.HandleFunc("/api/v1/create/{InstanceId}", HandleClusterCreate).Methods("POST")
+//	router.HandleFunc("/api/v1/create/{InstanceId}", HandleClusterCreate).Methods("POST")
+	router.HandleFunc("/api/v1/create/{InstanceId}", feeds.HandleClusterCreate).Methods("POST")
 	router.HandleFunc("/api/v1/status/{InstanceId}", HandleClusterStatus).Methods("GET")
 	router.HandleFunc("/api/v1/start/{InstanceId}", HandleClusterStart).Methods("GET")
 	router.HandleFunc("/api/v1/stop/{InstanceId}", HandleClusterStop).Methods("GET")
@@ -335,7 +436,10 @@ func getJname() string {
 	return result
 }
 
-func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
+//func (feeds *MyFeeds) HandleClusterCluster(w http.ResponseWriter, r *http.Request) {
+//func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
+func (feeds *MyFeeds) HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
+
 	var InstanceId string
 	params := mux.Vars(r)
 
@@ -415,6 +519,22 @@ func HandleClusterCreate(w http.ResponseWriter, r *http.Request) {
 	//existance?
 	// check for existance
 	cid := md5.Sum(uid)
+
+
+	//ALLOWED?
+	var p *AllowList
+
+	currentAllow := feeds.f.start
+
+	for i := 0; i < feeds.f.length; i++ {
+		p = currentAllow
+		currentAllow = currentAllow.next
+		ResultKeyType := (string(p.keyType))
+		fmt.Println("ResultType: ", ResultKeyType)
+	}
+
+	return
+
 	VmPathDir := fmt.Sprintf("%s/%x", *dbDir, cid)
 
 	if !fileExists(VmPathDir) {
