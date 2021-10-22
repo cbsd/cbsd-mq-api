@@ -68,17 +68,26 @@ Open /usr/local/etc/cbsd-mq-router.json in any favorite editor and set
     "cbsdcolor": false,
     "broker": "beanstalkd",
     "logfile": "/dev/stdout",
+    "recomendation": "/usr/local/cbsd/modules/api.d/misc/recomendation.sh",
+    "freejname": "/usr/local/cbsd/modules/api.d/misc/freejname.sh",
+    "server_url": "https://127.0.0.1",
+    "cloud_images_list": "/usr/local/etc/cbsd_api_cloud_images.json",
+    "iso_images_list": "/usr/local/etc/cbsd_api_iso_images.json",
     "beanstalkd": {
       "uri": "127.0.0.1:11300",
-      "tube": "cbsd_apitest_my_domain",
-      "reply_tube_prefix": "cbsd_cbsd_apitest_my_domain_result_id",
+      "tube": "cbsd_zpool1",
+      "reply_tube_prefix": "cbsd_zpool1_result_id",
       "reconnect_timeout": 5,
       "reserve_timeout": 5,
       "publish_timeout": 5,
       "logdir": "/var/log/cbsdmq"
     }
 }
+
 ```
+
+  `cloud_images_list` - The path to the json  file, which is displayed upon /images query - list of avaliable images.
+                        See etc/cbsd_api_cloud_images.json as sample.
 
 5) Start MQ router:
 ```
