@@ -97,7 +97,14 @@ func (f *Feed) Append(newAllow *AllowList) {
 }
 
 func newAllow(keyType string, key string, comment string) *AllowList {
-	np := AllowList{keyType: keyType, key: key, comment: comment}
+
+	KeyInList := fmt.Sprintf("%s %s %s", keyType, key, comment)
+	uid := []byte(KeyInList)
+	cid := md5.Sum(uid)
+
+	cidString := fmt.Sprintf("%x", cid)
+
+	np := AllowList{keyType: keyType, key: key, comment: comment, cid: cidString}
 //	np.Response = ""
 //	np.Time = 0
 	return &np
@@ -234,11 +241,16 @@ func main() {
 	router := mux.NewRouter()
 //	router.HandleFunc("/api/v1/create/{InstanceId}", HandleClusterCreate).Methods("POST")
 	router.HandleFunc("/api/v1/create/{InstanceId}", feeds.HandleClusterCreate).Methods("POST")
-	router.HandleFunc("/api/v1/status/{InstanceId}", HandleClusterStatus).Methods("GET")
-	router.HandleFunc("/api/v1/start/{InstanceId}", HandleClusterStart).Methods("GET")
-	router.HandleFunc("/api/v1/stop/{InstanceId}", HandleClusterStop).Methods("GET")
-	router.HandleFunc("/api/v1/cluster", HandleClusterCluster).Methods("GET")
-	router.HandleFunc("/api/v1/destroy/{InstanceId}", HandleClusterDestroy).Methods("GET")
+//	router.HandleFunc("/api/v1/status/{InstanceId}", HandleClusterStatus).Methods("GET")
+	router.HandleFunc("/api/v1/status/{InstanceId}", feeds.HandleClusterStatus).Methods("GET")
+//	router.HandleFunc("/api/v1/start/{InstanceId}", HandleClusterStart).Methods("GET")
+	router.HandleFunc("/api/v1/start/{InstanceId}", feeds.HandleClusterStart).Methods("GET")
+//	router.HandleFunc("/api/v1/stop/{InstanceId}", HandleClusterStop).Methods("GET")
+	router.HandleFunc("/api/v1/stop/{InstanceId}", feeds.HandleClusterStop).Methods("GET")
+//	router.HandleFunc("/api/v1/cluster", HandleClusterCluster).Methods("GET")
+	router.HandleFunc("/api/v1/cluster", feeds.HandleClusterCluster).Methods("GET")
+//	router.HandleFunc("/api/v1/destroy/{InstanceId}", HandleClusterDestroy).Methods("GET")
+	router.HandleFunc("/api/v1/destroy/{InstanceId}", feeds.HandleClusterDestroy).Methods("GET")
 	fmt.Println("Listen", *listen)
 	fmt.Println("Server URL", server_url)
 	log.Fatal(http.ListenAndServe(*listen, router))
@@ -284,7 +296,54 @@ func validateVmType(VmType string) bool {
 	}
 }
 
-func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
+
+func isPubKeyAllowed(feeds *MyFeeds, PubKey string) bool {
+	//ALLOWED?
+	var p *AllowList
+	currentAllow := feeds.f.start
+
+	for i := 0; i < feeds.f.length; i++ {
+		p = currentAllow
+		currentAllow = currentAllow.next
+		ResultKeyType := (string(p.keyType))
+		ResultKey := (string(p.key))
+		ResultKeyComment := (string(p.comment))
+		//fmt.Println("ResultType: ", ResultKeyType)
+		KeyInList := fmt.Sprintf("%s %s %s", ResultKeyType, ResultKey,ResultKeyComment)
+		fmt.Printf("[%s][%s]\n", PubKey, KeyInList)
+
+		if len(PubKey) == len(KeyInList) {
+			if strings.Compare(PubKey, KeyInList) == 0 {
+				fmt.Printf("MAAAATCHED\n")
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func isCidAllowed(feeds *MyFeeds, Cid string) bool {
+	//ALLOWED?
+	var p *AllowList
+	currentAllow := feeds.f.start
+
+	for i := 0; i < feeds.f.length; i++ {
+		p = currentAllow
+		currentAllow = currentAllow.next
+		CidInList := (string(p.cid))
+		if strings.Compare(Cid, CidInList) == 0 {
+			fmt.Printf("MAAAATCHED\n")
+			return true
+		}
+	}
+
+	return false
+}
+
+
+//func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
+func (feeds *MyFeeds) HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	var InstanceId string
 	params := mux.Vars(r)
 
@@ -297,6 +356,11 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	Cid := r.Header.Get("cid")
 	if !validateCid(Cid) {
 		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", http.StatusNotFound)
+		return
+	}
+
+	if !isCidAllowed(feeds, Cid) {
+		JSONError(w, "Not allowed", http.StatusInternalServerError)
 		return
 	}
 
@@ -340,10 +404,15 @@ func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func HandleClusterCluster(w http.ResponseWriter, r *http.Request) {
+func (feeds *MyFeeds) HandleClusterCluster(w http.ResponseWriter, r *http.Request) {
 	Cid := r.Header.Get("cid")
 	if !validateCid(Cid) {
 		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", http.StatusNotFound)
+		return
+	}
+
+	if !isCidAllowed(feeds, Cid) {
+		JSONError(w, "Not allowed", http.StatusInternalServerError)
 		return
 	}
 
@@ -520,20 +589,10 @@ func (feeds *MyFeeds) HandleClusterCreate(w http.ResponseWriter, r *http.Request
 	// check for existance
 	cid := md5.Sum(uid)
 
-
-	//ALLOWED?
-	var p *AllowList
-
-	currentAllow := feeds.f.start
-
-	for i := 0; i < feeds.f.length; i++ {
-		p = currentAllow
-		currentAllow = currentAllow.next
-		ResultKeyType := (string(p.keyType))
-		fmt.Println("ResultType: ", ResultKeyType)
+	if !isPubKeyAllowed(feeds, vm.Pubkey) {
+		JSONError(w, "Not allowed", http.StatusInternalServerError)
+		return
 	}
-
-	return
 
 	VmPathDir := fmt.Sprintf("%s/%x", *dbDir, cid)
 
@@ -771,7 +830,7 @@ func (feeds *MyFeeds) HandleClusterCreate(w http.ResponseWriter, r *http.Request
 	return
 }
 
-func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
+func (feeds *MyFeeds) HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 	var InstanceId string
 	params := mux.Vars(r)
 
@@ -787,6 +846,12 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", http.StatusNotFound)
 		return
 	}
+
+	if !isCidAllowed(feeds, Cid) {
+		JSONError(w, "Not allowed", http.StatusInternalServerError)
+		return
+	}
+
 
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
@@ -886,7 +951,7 @@ func HandleClusterDestroy(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
+func (feeds *MyFeeds) HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 	var InstanceId string
 	params := mux.Vars(r)
 
@@ -901,6 +966,12 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", http.StatusNotFound)
 		return
 	}
+
+	if !isCidAllowed(feeds, Cid) {
+		JSONError(w, "Not allowed", http.StatusInternalServerError)
+		return
+	}
+
 
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
@@ -980,7 +1051,7 @@ func HandleClusterStop(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
+func (feeds *MyFeeds) HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 	var InstanceId string
 	params := mux.Vars(r)
 
@@ -995,6 +1066,12 @@ func HandleClusterStart(w http.ResponseWriter, r *http.Request) {
 		JSONError(w, "The cid should be valid form: ^[a-f0-9]{32}$", http.StatusNotFound)
 		return
 	}
+
+	if !isCidAllowed(feeds, Cid) {
+		JSONError(w, "Not allowed", http.StatusInternalServerError)
+		return
+	}
+
 
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
