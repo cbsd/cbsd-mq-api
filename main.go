@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -16,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"io"
 
 	"github.com/gorilla/mux"
 	"golang.org/x/crypto/ssh"
@@ -27,6 +27,7 @@ var config Config
 var runscript string
 var workdir string
 var server_url string
+var acl_enable bool
 
 type Response struct {
 	Message string
@@ -62,21 +63,21 @@ var (
 	stopScript             = flag.String("stop_script", "control-api", "CBSD target run script")
 	serverUrl              = flag.String("server_url", "http://127.0.0.1:65532", "Server URL for external requests")
 	dbDir                  = flag.String("dbdir", "/var/db/cbsd-api", "db root dir")
-	allowListFile          = flag.String("allowlist", "/usr/local/etc/cbsd-mq-api.allow", "Path to PubKey whitelist")
+	allowListFile          = flag.String("allowlist", "", "Path to PubKey whitelist, e.g: -allowlist /usr/local/etc/cbsd-mq-api.allow")
 )
 
 type AllowList struct {
-	keyType	string
-	key	string
-	comment	string
-	cid	string
-	next	*AllowList	// link to the next records
+	keyType string
+	key     string
+	comment string
+	cid     string
+	next    *AllowList // link to the next records
 }
 
 // linked struct
 type Feed struct {
-	length  int
-	start   *AllowList
+	length int
+	start  *AllowList
 }
 
 type MyFeeds struct {
@@ -105,11 +106,10 @@ func newAllow(keyType string, key string, comment string) *AllowList {
 	cidString := fmt.Sprintf("%x", cid)
 
 	np := AllowList{keyType: keyType, key: key, comment: comment, cid: cidString}
-//	np.Response = ""
-//	np.Time = 0
+	//	np.Response = ""
+	//	np.Time = 0
 	return &np
 }
-
 
 // we need overwrite Content-Type here
 // https://stackoverflow.com/questions/59763852/can-you-return-json-in-golang-http-error
@@ -119,8 +119,8 @@ func JSONError(w http.ResponseWriter, message string, code int) {
 	// write header is mandatory to overwrite header
 	w.WriteHeader(code)
 
-	if len(message)>0 {
-		response := Response{ message }
+	if len(message) > 0 {
+		response := Response{message}
 		js, err := json.Marshal(response)
 		if err != nil {
 			fmt.Fprintln(w, "{\"Message\":\"Marshal error\"}", http.StatusInternalServerError)
@@ -175,84 +175,62 @@ func main() {
 	}
 
 	if !fileExists(*dbDir) {
-		fmt.Printf("db dir created: %s\n", *dbDir)
+		fmt.Printf("* db dir created: %s\n", *dbDir)
 		os.MkdirAll(*dbDir, 0770)
 	}
 
+	f := &Feed{}
 
 	// WhiteList
-	if !fileExists(*allowListFile) {
-		fmt.Printf("no such allowList file, please check config/path: %s\n", allowListFile)
-		os.Exit(1)
-	}
-	f := &Feed{}
-//	var p *AllowList
-	// loadconfig
-	fd, err := os.Open(*allowListFile)
-	if err != nil {
-		panic(err)
-	}
-	defer fd.Close()
-
-	var keyType string
-	var key string
-	var comment string
-
-
-
-	for {
-		_, err := fmt.Fscanf(fd,"%s %s %s",&keyType,&key,&comment)
+	if (*allowListFile == "") || (!fileExists(*allowListFile)) {
+		fmt.Println("* no such allowList file ( -allowlist <path> )")
+		fmt.Println("* ACL disabled: fully open system, all queries are permit!")
+		acl_enable = false
+	} else {
+		fmt.Printf("* ACL enabled: %s\n", *allowListFile)
+		acl_enable = true
+		// loadconfig
+		fd, err := os.Open(*allowListFile)
 		if err != nil {
-			if err != io.EOF {
-				//log.Fatal(err)
-				break
-			}
+			panic(err)
 		}
-		fmt.Printf("loaded: [%s %s %s]\n", keyType, key, comment)
-		p := newAllow(keyType,key,comment)
-		f.Append(p)
-	}
+		defer fd.Close()
 
-	fd.Close()
+		var keyType string
+		var key string
+		var comment string
 
-	fmt.Printf("AllowList Length: %v\n", f.length)
-//	currentAllow := f.start
+		for {
+			// todo: input validation
+			// todo: auto-reload, signal
+			_, err := fmt.Fscanf(fd, "%s %s %s", &keyType, &key, &comment)
+			if err != nil {
+				if err != io.EOF {
+					//log.Fatal(err)
+					break
+				}
+			}
+			fmt.Printf("* ACL loaded: [%s %s %s]\n", keyType, key, comment)
+			p := newAllow(keyType, key, comment)
+			f.Append(p)
+		}
 
-	var p *AllowList
-	for i := 0; i < f.length; i++ {
-		currentAllow := f.start
-		p = currentAllow
-		currentAllow = currentAllow.next
-		ResultKeyType := (string(p.keyType))
-		fmt.Println("ResultType: ", ResultKeyType)
-//                        if len(ResultAlias) < 1 {
-//                                ResultNameserver := (string(p.NameServer))
-//                                ResultNameserver = strings.Replace(ResultNameserver, ".", "_", -1)
-//                                ResultAlias = strings.Replace(ResultNameserver, ":", "_", -1)
-//                        }
-//                
-//                        Result := fmt.Sprintf("check_dns_%s_%s: %d",ResultHost,ResultAlias,p.Time)
-//                        fmt.Println(Result)
+		fd.Close()
+		fmt.Printf("* AllowList Length: %v\n", f.length)
 	}
 
 	// setup: we need to pass Feed into handler function
-	feeds := &MyFeeds{ f: f }
+	feeds := &MyFeeds{f: f}
 
 	router := mux.NewRouter()
-//	router.HandleFunc("/api/v1/create/{InstanceId}", HandleClusterCreate).Methods("POST")
 	router.HandleFunc("/api/v1/create/{InstanceId}", feeds.HandleClusterCreate).Methods("POST")
-//	router.HandleFunc("/api/v1/status/{InstanceId}", HandleClusterStatus).Methods("GET")
 	router.HandleFunc("/api/v1/status/{InstanceId}", feeds.HandleClusterStatus).Methods("GET")
-//	router.HandleFunc("/api/v1/start/{InstanceId}", HandleClusterStart).Methods("GET")
 	router.HandleFunc("/api/v1/start/{InstanceId}", feeds.HandleClusterStart).Methods("GET")
-//	router.HandleFunc("/api/v1/stop/{InstanceId}", HandleClusterStop).Methods("GET")
 	router.HandleFunc("/api/v1/stop/{InstanceId}", feeds.HandleClusterStop).Methods("GET")
-//	router.HandleFunc("/api/v1/cluster", HandleClusterCluster).Methods("GET")
 	router.HandleFunc("/api/v1/cluster", feeds.HandleClusterCluster).Methods("GET")
-//	router.HandleFunc("/api/v1/destroy/{InstanceId}", HandleClusterDestroy).Methods("GET")
 	router.HandleFunc("/api/v1/destroy/{InstanceId}", feeds.HandleClusterDestroy).Methods("GET")
-	fmt.Println("Listen", *listen)
-	fmt.Println("Server URL", server_url)
+	fmt.Println("* Listen", *listen)
+	fmt.Println("* Server URL", server_url)
 	log.Fatal(http.ListenAndServe(*listen, router))
 }
 
@@ -296,7 +274,6 @@ func validateVmType(VmType string) bool {
 	}
 }
 
-
 func isPubKeyAllowed(feeds *MyFeeds, PubKey string) bool {
 	//ALLOWED?
 	var p *AllowList
@@ -309,7 +286,7 @@ func isPubKeyAllowed(feeds *MyFeeds, PubKey string) bool {
 		ResultKey := (string(p.key))
 		ResultKeyComment := (string(p.comment))
 		//fmt.Println("ResultType: ", ResultKeyType)
-		KeyInList := fmt.Sprintf("%s %s %s", ResultKeyType, ResultKey,ResultKeyComment)
+		KeyInList := fmt.Sprintf("%s %s %s", ResultKeyType, ResultKey, ResultKeyComment)
 		fmt.Printf("[%s][%s]\n", PubKey, KeyInList)
 
 		if len(PubKey) == len(KeyInList) {
@@ -340,7 +317,6 @@ func isCidAllowed(feeds *MyFeeds, Cid string) bool {
 
 	return false
 }
-
 
 //func HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
 func (feeds *MyFeeds) HandleClusterStatus(w http.ResponseWriter, r *http.Request) {
@@ -695,7 +671,7 @@ func (feeds *MyFeeds) HandleClusterCreate(w http.ResponseWriter, r *http.Request
 	}
 
 	Jname := getJname()
-	if len(Jname)<1 {
+	if len(Jname) < 1 {
 		log.Fatal("unable to get jname")
 		return
 	}
@@ -755,12 +731,11 @@ func (feeds *MyFeeds) HandleClusterCreate(w http.ResponseWriter, r *http.Request
 			continue
 		}
 
-
 		if !regexpParamName.MatchString(jconf_param) {
-			fmt.Printf("Error: wrong paramname: [%s]\n",jconf_param)
+			fmt.Printf("Error: wrong paramname: [%s]\n", jconf_param)
 			continue
 		} else {
-			fmt.Printf("paramname test passed: [%s]\n",jconf_param)
+			fmt.Printf("paramname test passed: [%s]\n", jconf_param)
 		}
 
 		// validate unknown data values
@@ -774,7 +749,7 @@ func (feeds *MyFeeds) HandleClusterCreate(w http.ResponseWriter, r *http.Request
 		case "host_hostname":
 		default:
 			if !regexpParamVal.MatchString(tmpval) {
-				fmt.Printf("Error: wrong paramval for %s: [%s]\n",jconf_param,tmpval)
+				fmt.Printf("Error: wrong paramval for %s: [%s]\n", jconf_param, tmpval)
 				continue
 			}
 		}
@@ -851,7 +826,6 @@ func (feeds *MyFeeds) HandleClusterDestroy(w http.ResponseWriter, r *http.Reques
 		JSONError(w, "Not allowed", http.StatusInternalServerError)
 		return
 	}
-
 
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
@@ -972,7 +946,6 @@ func (feeds *MyFeeds) HandleClusterStop(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
 		return
@@ -1071,7 +1044,6 @@ func (feeds *MyFeeds) HandleClusterStart(w http.ResponseWriter, r *http.Request)
 		JSONError(w, "Not allowed", http.StatusInternalServerError)
 		return
 	}
-
 
 	HomePath := fmt.Sprintf("%s/%s/vms", *dbDir, Cid)
 	if _, err := os.Stat(HomePath); os.IsNotExist(err) {
