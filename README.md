@@ -17,6 +17,17 @@ Homepage: https://bsdstore.ru
 
 Provides a simplified API for creating and destroying CBSD virtual environments.
 
+## Errata
+
+By default, all actions are permitted for all requests.
+Through the `-allowlist <whitelist_file>` parameter you can limit the number of permissible public keys/CID.
+Format of <whitelist_file> similar to authotized_keys: one key per line, e.g:
+
+```
+ssh-ed25519 AAAA...xxx your_name@@your.domain
+ssh-ed25519 AAAA...yyy user2@@example.com
+```
+
 ## Installation
 
 Assuming you have a stock vanilla FreeBSD 13.0+ installation.
