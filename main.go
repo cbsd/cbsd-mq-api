@@ -2,11 +2,11 @@
 package main
 
 import (
+	"bufio"
 	"crypto/md5"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -196,26 +196,34 @@ func main() {
 		}
 		defer fd.Close()
 
+		scanner := bufio.NewScanner(fd)
+
 		var keyType string
 		var key string
 		var comment string
 
-		for {
-			// todo: input validation
-			// todo: auto-reload, signal
-			_, err := fmt.Fscanf(fd, "%s %s %s", &keyType, &key, &comment)
-			if err != nil {
-				if err != io.EOF {
-					//log.Fatal(err)
-					break
-				}
-			}
-			fmt.Printf("* ACL loaded: [%s %s %s]\n", keyType, key, comment)
-			p := newAllow(keyType, key, comment)
-			f.Append(p)
+		scanner.Split(bufio.ScanLines)
+		var txtlines []string
+
+		for scanner.Scan() {
+			txtlines = append(txtlines, scanner.Text())
 		}
 
 		fd.Close()
+
+		for _, eachline := range txtlines {
+			fmt.Println(eachline)
+			// todo: input validation
+			// todo: auto-reload, signal
+			_, err := fmt.Sscanf(eachline, "%s %s %s", &keyType, &key, &comment)
+			if err != nil {
+				log.Fatal(err)
+					break
+				}
+			fmt.Printf("* ACL loaded: [%s %s %s]\n", keyType, key, comment)
+			p := newAllow(keyType, key, comment)
+			f.Append(p)
+			}
 		fmt.Printf("* AllowList Length: %v\n", f.length)
 	}
 
@@ -228,6 +236,7 @@ func main() {
 	router.HandleFunc("/api/v1/start/{InstanceId}", feeds.HandleClusterStart).Methods("GET")
 	router.HandleFunc("/api/v1/stop/{InstanceId}", feeds.HandleClusterStop).Methods("GET")
 	router.HandleFunc("/api/v1/cluster", feeds.HandleClusterCluster).Methods("GET")
+	router.HandleFunc("/images", HandleClusterImages).Methods("GET")
 	router.HandleFunc("/api/v1/destroy/{InstanceId}", feeds.HandleClusterDestroy).Methods("GET")
 	fmt.Println("* Listen", *listen)
 	fmt.Println("* Server URL", server_url)
@@ -279,6 +288,10 @@ func isPubKeyAllowed(feeds *MyFeeds, PubKey string) bool {
 	var p *AllowList
 	currentAllow := feeds.f.start
 
+	if !acl_enable {
+		return true
+	}
+
 	for i := 0; i < feeds.f.length; i++ {
 		p = currentAllow
 		currentAllow = currentAllow.next
@@ -291,7 +304,7 @@ func isPubKeyAllowed(feeds *MyFeeds, PubKey string) bool {
 
 		if len(PubKey) == len(KeyInList) {
 			if strings.Compare(PubKey, KeyInList) == 0 {
-				fmt.Printf("MAAAATCHED\n")
+				fmt.Printf("pubkey matched\n")
 				return true
 			}
 		}
@@ -305,12 +318,16 @@ func isCidAllowed(feeds *MyFeeds, Cid string) bool {
 	var p *AllowList
 	currentAllow := feeds.f.start
 
+	if !acl_enable {
+		return true
+	}
+
 	for i := 0; i < feeds.f.length; i++ {
 		p = currentAllow
 		currentAllow = currentAllow.next
 		CidInList := (string(p.cid))
 		if strings.Compare(Cid, CidInList) == 0 {
-			fmt.Printf("MAAAATCHED\n")
+			fmt.Printf("Cid ACL matched: %s\n", Cid)
 			return true
 		}
 	}
@@ -336,7 +353,8 @@ func (feeds *MyFeeds) HandleClusterStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	if !isCidAllowed(feeds, Cid) {
-		JSONError(w, "Not allowed", http.StatusInternalServerError)
+		fmt.Printf("CID not in ACL: %s\n", Cid)
+		JSONError(w, "not allowed", http.StatusInternalServerError)
 		return
 	}
 
@@ -388,7 +406,8 @@ func (feeds *MyFeeds) HandleClusterCluster(w http.ResponseWriter, r *http.Reques
 	}
 
 	if !isCidAllowed(feeds, Cid) {
-		JSONError(w, "Not allowed", http.StatusInternalServerError)
+		fmt.Printf("CID not in ACL: %s\n", Cid)
+		JSONError(w, "not allowed", http.StatusInternalServerError)
 		return
 	}
 
@@ -418,6 +437,28 @@ func (feeds *MyFeeds) HandleClusterCluster(w http.ResponseWriter, r *http.Reques
 		return
 	}
 }
+
+func HandleClusterImages(w http.ResponseWriter, r *http.Request) {
+
+	if fileExists(config.Cloud_images_list) {
+		b, err := ioutil.ReadFile(config.Cloud_images_list) // just pass the file name
+		if err != nil {
+			JSONError(w, "", http.StatusNotFound)
+			return
+		} else {
+			// already in json - send as-is
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.WriteHeader(200)
+			http.Error(w, string(b), 200)
+			return
+		}
+	} else {
+		JSONError(w, "", http.StatusNotFound)
+		return
+	}
+}
+
 
 func realInstanceCreate(body string) {
 
@@ -566,7 +607,8 @@ func (feeds *MyFeeds) HandleClusterCreate(w http.ResponseWriter, r *http.Request
 	cid := md5.Sum(uid)
 
 	if !isPubKeyAllowed(feeds, vm.Pubkey) {
-		JSONError(w, "Not allowed", http.StatusInternalServerError)
+		fmt.Printf("Pubkey not in ACL: %s\n", vm.Pubkey)
+		JSONError(w, "not allowed", http.StatusInternalServerError)
 		return
 	}
 
@@ -823,7 +865,8 @@ func (feeds *MyFeeds) HandleClusterDestroy(w http.ResponseWriter, r *http.Reques
 	}
 
 	if !isCidAllowed(feeds, Cid) {
-		JSONError(w, "Not allowed", http.StatusInternalServerError)
+		fmt.Printf("CID not in ACL: %s\n", Cid)
+		JSONError(w, "not allowed", http.StatusInternalServerError)
 		return
 	}
 
@@ -942,7 +985,8 @@ func (feeds *MyFeeds) HandleClusterStop(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if !isCidAllowed(feeds, Cid) {
-		JSONError(w, "Not allowed", http.StatusInternalServerError)
+		fmt.Printf("CID not in ACL: %s\n", Cid)
+		JSONError(w, "not allowed", http.StatusInternalServerError)
 		return
 	}
 
@@ -1041,7 +1085,8 @@ func (feeds *MyFeeds) HandleClusterStart(w http.ResponseWriter, r *http.Request)
 	}
 
 	if !isCidAllowed(feeds, Cid) {
-		JSONError(w, "Not allowed", http.StatusInternalServerError)
+		fmt.Printf("CID not in ACL: %s\n", Cid)
+		JSONError(w, "not allowed", http.StatusInternalServerError)
 		return
 	}
 

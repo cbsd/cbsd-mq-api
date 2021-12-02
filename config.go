@@ -13,6 +13,8 @@ type Config struct {
 	ImageList       string `json:"imagelist"`
 	Recomendation   string `json:"recomendation"`
 	Freejname       string `json:"freejname"`
+	Cloud_images_list string `json:"cloud_images_list"`
+	Iso_images_list   string `json:"iso_images_list"`
 	BeanstalkConfig `json:"beanstalkd"`
 }
 
