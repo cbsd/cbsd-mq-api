@@ -1,8 +1,7 @@
 # CBSD RESTFull API
 
-Copyright (c) 2013-2021, The CBSD Development Team
-
-Homepage: https://bsdstore.ru
+Copyright (c) 2013-2024, The CBSD Development Team
+Homepage: https://github.com/cbsd/cbsd
 
 #### Table of Contents
 
@@ -30,7 +29,7 @@ ssh-ed25519 AAAA...yyy user2@@example.com
 
 ## Installation
 
-Assuming you have a stock vanilla FreeBSD 13.0+ installation.
+Assuming you have a stock vanilla FreeBSD 14.0+ installation.
 The directives below configure a standalone installation ( single API + hoster env),
 however you can use any number of physical nodes for single API.
 
@@ -41,7 +40,7 @@ pkg install -y cbsd cbsd-mq-router cbsd-mq-api beanstalkd git
 
 2) Configure beanstalkd, the broker service.
 
-  Since all services are on the same server, we will specify the address 127.0.0.1 
+  Since all services are on the same server, we will specify the address 127.0.0.1
   for incoming connections and start the service:
 ```
 sysrc beanstalkd_flags="-l 127.0.0.1 -p 11300"
@@ -144,10 +143,11 @@ service cbsd-mq-api start
 
 ## Usage
 
-Valid endpoints:
+### Via curl, valid endpoints:
 
 ```
 curl -H "cid:<cid>" http://127.0.0.1:65531/api/v1/cluster
+curl -X POST -H "Content-Type: application/json" -d @filename.json http://127.0.0.1:65531/api/v1/create/vm1
 curl -H "cid:<cid>" http://127.0.0.1:65531/api/v1/status/<env>
 curl -H "cid:<cid>" http://127.0.0.1:65531/api/v1/start/<env>
 curl -H "cid:<cid>" http://127.0.0.1:65531/api/v1/stop/<env>
@@ -155,7 +155,34 @@ curl -H "cid:<cid>" http://127.0.0.1:65531/api/v1/destroy/<env>
 ```
 Where `<cid>` is your token/namespace. For convenience, in a *private cluster*, 
 we suggest using md5 hash of your public key as <cid>.
-To test, lets create simple CBSDfile, where CLOUD_KEY - is your publickey string:
+
+To test with curl, create valid payload file, e.g. `debian12.json`:
+```
+cat > debian11.json <<EOF
+{
+  "imgsize": "10g",
+  "ram": "1g",
+  "cpus": 2,
+  "image": "debian12",
+  "pubkey": "ssh-ed25519 AAAA..XXX your@localhost"
+}
+EOF
+```
+Then send it to /create endpoint:
+```
+curl --no-progress-meter -X POST -H "Content-Type: application/json" -d @debian12.json http://127.0.0.1:65531/api/v1/create/vm1
+```
+
+to create 'vm1' or:
+```
+curl --no-progress-meter -X POST -H "Content-Type: application/json" -d @debian12.json http://127.0.0.1:65531/api/v1/create/_
+```
+
+to assign a VM name automatically.
+
+### Via CBSDfile:
+
+To test via CBSDfile, lets create simple CBSDfile, where CLOUD_KEY - is your publickey string:
 ```
 CLOUD_URL="http://127.0.0.1:65531"
 CLOUD_KEY="ssh-ed25519 AAAA..XXX your@localhost"
@@ -181,17 +208,11 @@ cbsd destroy
 
 See documentation for detailed information and additional examples: [https://www.bsdstore.ru/en/cbsd_api_ssi.html](https://www.bsdstore.ru/en/cbsd_api_ssi.html)
 
-## Contributing
+## Get Support
 
-* Fork me on GitHub: [https://github.com/cbsd/cbsd-mq-api.git](https://github.com/cbsd/cbsd-mq-api.git)
-* Switch to 'develop' branch
-* Commit your changes (`git commit -am 'Added some feature'`)
-* Push to the branch (`git push`)
-* Create new Pull Request
+* GitHub: https://github.com/cbsd/cbsd-mq-api/issues
+* For CBSD-related support, discussion and talks, please join to Telegram CBSD usergroup channel: @cbsdofficial ( [https://t.me/cbsdofficial](https://t.me/cbsdofficial)
 
-## Support
+## Support Us
 
-* For CBSD-related support, discussion and talks, please join to Telegram CBSD usergroup channel: @cbsdofficial
-* Web link: https://t.me/cbsdofficial
-* Or subscribe to mailing list by sending email to: cbsd+subscribe@lists.tilda.center
-* Other contact: https://www.bsdstore.ru/en/feedback.html
+* https://www.patreon.com/clonos
