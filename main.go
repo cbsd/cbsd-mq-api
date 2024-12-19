@@ -1083,7 +1083,7 @@ func HandleCreateVm(w http.ResponseWriter, vm Vm) {
 		fmt.Println(fileErr)
 		return
 	}
-	fmt.Fprintf(tfile, "{\n  \"instanceid\": \"%s\",\n  \"is_power_on\": \"false\",\n  \"status\": \"pending\",\n  \"progress\": 0\n}\n", InstanceId)
+	fmt.Fprintf(tfile, "{\n  \"id\": \"%s\",\n  \"is_power_on\": \"false\",\n  \"status\": \"pending\",\n  \"progress\": 0\n}\n", InstanceId)
 	tfile.Close()
 
 	getNodeRecomendation(recomendation.String(), suggest)
@@ -1880,7 +1880,7 @@ func HandleCreateK8s(w http.ResponseWriter, cluster Cluster) {
 		return
 	}
 
-	fmt.Fprintf(tfile, "{\n  \"instanceid\": \"%s\",\n  \"is_power_on\": \"false\",\n  \"status\": \"pending\",\n  \"progress\": 0\n}\n", InstanceId)
+	fmt.Fprintf(tfile, "{\n  \"id\": \"%s\",\n  \"is_power_on\": \"false\",\n  \"status\": \"pending\",\n  \"progress\": 0\n}\n", InstanceId)
 
 	tfile.Close()
 
