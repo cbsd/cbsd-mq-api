@@ -1,6 +1,6 @@
-// CBSD Project 2013-2024
-// K8s-bhyve project 2020-2024
-// MyBee project 2021-2024
+// CBSD Project 2013-2025
+// K8s-bhyve project 2020-2025
+// MyBee project 2021-2025
 package main
 
 import (
@@ -35,6 +35,7 @@ var workdir string
 var server_url string
 var acl_enable bool
 var spool_Dir string
+var onetime_Dir string
 
 var clusterLimitMax int
 
@@ -105,6 +106,7 @@ var (
 	allowListFile          = flag.String("allowlist", "", "Path to PubKey whitelist, e.g: -allowlist /usr/local/etc/cbsd-mq-api.allow")
 	clusterLimit           = flag.Int("cluster_limit", 3, "Max number of clusters")
 	spoolDir               = flag.String("spooldir", "/var/spool/cbsd-mq-api", "spool root dir")
+	oneTimeConfDir         = flag.String("onetimeconfdir", "", "one-time config dir")
 )
 
 type AllowList struct {
@@ -229,6 +231,7 @@ func main() {
 	workdir = config.CbsdEnv
 	server_url = config.ServerUrl
 	spool_Dir = *spoolDir
+	onetime_Dir = *oneTimeConfDir
 
 	if !fileExists(spool_Dir) {
 		os.MkdirAll(spool_Dir, 0770)
@@ -328,6 +331,20 @@ func main() {
 	router.HandleFunc("/images", HandleClusterImages).Methods("GET")
 	router.HandleFunc("/flavors", HandleClusterFlavors).Methods("GET")
 
+	if len(onetime_Dir) > 1 {
+		if !fileExists(onetime_Dir) {
+			fmt.Printf("One-time directory not exist: %s\n", onetime_Dir)
+			os.Exit(1)
+		} else {
+			fmt.Printf("* One-time dir enabled: %s\n", onetime_Dir)
+			router.HandleFunc("/api/v1/otc/{CfgFile}", feeds.HandleOneTimeConf).Methods("GET")
+		}
+	} else {
+		fmt.Println("* One-time dir disabled")
+	}
+
+
+
 	fmt.Println("* Listen", *listen)
 	fmt.Println("* Server URL", server_url)
 	log.Fatal(http.ListenAndServe(*listen, router))
@@ -351,6 +368,20 @@ func validateInstanceId(InstanceId string) bool {
 	}
 
 	if regexpInstanceId.MatchString(InstanceId) {
+		return true
+	} else {
+		return false
+	}
+}
+
+func validateCfgFile(CfgFile string) bool {
+	var regexpCfgFile = regexp.MustCompile("^[a-z_]([a-z0-9_])*$")
+
+	if len(CfgFile) < 1 || len(CfgFile) > 10 {
+		return false
+	}
+
+	if regexpCfgFile.MatchString(CfgFile) {
 		return true
 	} else {
 		return false
@@ -2331,3 +2362,46 @@ func (feeds *MyFeeds) HandleIacRequestStatus(w http.ResponseWriter, r *http.Requ
 	http.Error(w, string(b), 200)
 	return
 }
+
+func (feeds *MyFeeds) HandleOneTimeConf(w http.ResponseWriter, r *http.Request) {
+	var CfgFile string
+	params := mux.Vars(r)
+
+	CfgFile = params["CfgFile"]
+
+	CfgFile = params["CfgFile"]
+	if !validateCfgFile(CfgFile) {
+		fmt.Printf("The CfgFile should be valid form: ^[a-z_]([a-z0-9_])*$ (maxlen: 10)", CfgFile)
+		JSONError(w, "", 400)
+		return
+	}
+
+	configFile := fmt.Sprintf("%s/%s",onetime_Dir,CfgFile);
+
+	if !fileExists(configFile) {
+		fmt.Printf("Error: no such CfgFile: [%s]\n", configFile)
+		JSONError(w, "", 400)
+		return
+	}
+
+	b, err := ioutil.ReadFile(configFile) // just pass the file name
+	if err != nil {
+		fmt.Printf("unable to read CfgFile: [%s]\n", configFile)
+		JSONError(w, "", 400)
+		return
+	}
+
+	e := os.Remove(configFile)
+	if e != nil {
+		fmt.Printf("unable to unlink CfgFile: [%s]\n", configFile)
+	}
+
+	// already in json - send as-is
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.Error(w, string(b), 200)
+
+
+	return
+}
+
