@@ -375,7 +375,7 @@ func validateInstanceId(InstanceId string) bool {
 }
 
 func validateCfgFile(CfgFile string) bool {
-	var regexpCfgFile = regexp.MustCompile("^[a-z_]([a-z0-9_])*$")
+	var regexpCfgFile = regexp.MustCompile("^[aA0-zZ9_]([aA0-zZ9_])*$")
 
 	if len(CfgFile) < 1 || len(CfgFile) > 10 {
 		return false
