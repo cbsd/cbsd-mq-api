@@ -1,6 +1,6 @@
 # CBSD RESTFull API
 
-Copyright (c) 2013-2024, The CBSD Development Team
+Copyright (c) 2013-2025, The CBSD Development Team
 Homepage: https://github.com/cbsd/cbsd
 
 #### Table of Contents
@@ -29,7 +29,7 @@ ssh-ed25519 AAAA...yyy user2@@example.com
 
 ## Installation
 
-Assuming you have a stock vanilla FreeBSD 14.0+ installation.
+Assuming you have a stock vanilla FreeBSD 14.2+ installation.
 The directives below configure a standalone installation ( single API + hoster env),
 however you can use any number of physical nodes for single API.
 
@@ -206,7 +206,7 @@ cbsd status
 cbsd destroy
 ```
 
-See documentation for detailed information and additional examples: [https://www.bsdstore.ru/en/cbsd_api_ssi.html](https://www.bsdstore.ru/en/cbsd_api_ssi.html)
+See documentation for detailed information and additional examples [here](https://github.com/cbsd/cbsd/blob/develop/share/docs/general/cbsd_api.md)
 
 ## Get Support
 

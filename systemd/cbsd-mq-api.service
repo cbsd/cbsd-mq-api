@@ -1,0 +1,22 @@
+[Unit]
+Description=CBSD MQ api
+After=network.target network-online.target remote-fs.target nss-lookup.target openvswitch-switch.service
+Wants=network-online.target
+Documentation=https://github.com/cbsd/cbsd-mq-api, man:cbsd(8)
+ConditionPathExists=/etc/cbsd-mq-api.json
+
+[Service]
+Environment=NOINTER=1
+Type=simple
+ExecStart=/usr/local/sbin/cbsd-mq-api -config /etc/cbsd-mq-api.json
+PIDFile=/run/cbsd-mq-api.pid
+Restart=always
+RestartSec=10
+User=cbsd
+Group=cbsd
+PrivateTmp=true
+TimeoutStopSec=5
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target
