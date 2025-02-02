@@ -8,7 +8,7 @@ ConditionPathExists=/etc/cbsd-mq-api.json
 [Service]
 Environment=NOINTER=1
 Type=simple
-ExecStart=/usr/local/sbin/cbsd-mq-api -config /etc/cbsd-mq-api.json
+ExecStart=/usr/local/sbin/cbsd-mq-api -config /etc/cbsd-mq-api.json -vmengine qemu
 PIDFile=/run/cbsd-mq-api.pid
 Restart=always
 RestartSec=10

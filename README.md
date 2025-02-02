@@ -213,6 +213,17 @@ See documentation for detailed information and additional examples [here](https:
 * GitHub: https://github.com/cbsd/cbsd-mq-api/issues
 * For CBSD-related support, discussion and talks, please join to Telegram CBSD usergroup channel: @cbsdofficial ( [https://t.me/cbsdofficial](https://t.me/cbsdofficial)
 
+## update go sub/mods
+
+```
+rm -f go.mod go.sum
+```
+
+```
+go mod init cbsd-mq-api
+go mod tidy
+```
+
 ## Support Us
 
 * https://www.patreon.com/clonos

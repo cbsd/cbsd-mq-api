@@ -8,3 +8,4 @@ client
 common.yaml
 hiera.yaml
 init.pp
+pkg

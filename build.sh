@@ -20,7 +20,7 @@ fi
 
 export GOPATH="${workdir}"
 export GOBIN="${workdir}"
-export GO111MODULE=off
+#export GO111MODULE=off
 
 set -e
 go get

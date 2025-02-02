@@ -36,6 +36,7 @@ var server_url string
 var acl_enable bool
 var spool_Dir string
 var onetime_Dir string
+var vm_Engine string
 
 var clusterLimitMax int
 
@@ -94,7 +95,7 @@ var (
 	configFile             = flag.String("config", "/usr/local/etc/cbsd-mq-api.json", "Path to config.json")
 	listen         *string = flag.String("listen", "0.0.0.0:65531", "Listen host:port")
 	runScriptJail          = flag.String("runscript_jail", "jail-api", "CBSD target run script")
-	runScriptBhyve         = flag.String("runscript_bhyve", "bhyve-api", "CBSD target run script")
+	runScriptVm            = flag.String("runscript_vm", "vm-api", "CBSD target run script")
 	runScriptK8s           = flag.String("runscript_k8s", "k8world", "CBSD target run Kubernetes script")
 	destroyScript          = flag.String("destroy_script", "control-api", "CBSD target run script")
 	destroyK8sScript       = flag.String("destroy_k8s_script", "k8world", "CBSD target to destroy K8S")
@@ -107,6 +108,7 @@ var (
 	clusterLimit           = flag.Int("cluster_limit", 3, "Max number of clusters")
 	spoolDir               = flag.String("spooldir", "/var/spool/cbsd-mq-api", "spool root dir")
 	oneTimeConfDir         = flag.String("onetimeconfdir", "", "one-time config dir")
+	vmEngine               = flag.String("vmengine", "bhyve", "VM engine: bhyve, qemu, virtualbox, xen")
 )
 
 type AllowList struct {
@@ -232,6 +234,7 @@ func main() {
 	server_url = config.ServerUrl
 	spool_Dir = *spoolDir
 	onetime_Dir = *oneTimeConfDir
+	vm_Engine = *vmEngine
 
 	if !fileExists(spool_Dir) {
 		os.MkdirAll(spool_Dir, 0770)
@@ -266,6 +269,7 @@ func main() {
 	f := &Feed{}
 
 	fmt.Printf("* Cluster limit: %d\n", clusterLimitMax)
+	fmt.Printf("* VM engine: %s\n", vm_Engine)
 
 	// WhiteList
 	if (*allowListFile == "") || (!fileExists(*allowListFile)) {
@@ -497,9 +501,9 @@ func (feeds *MyFeeds) HandleClusterStatus(w http.ResponseWriter, r *http.Request
 	var SqliteDBPath string
 
 	if ( vmType == 1 ) {
-		SqliteDBPath = fmt.Sprintf("%s/%s/%s-bhyve.ssh", *k8sDbDir, Cid, string(b))
+		SqliteDBPath = fmt.Sprintf("%s/%s/%s-vm.ssh", *k8sDbDir, Cid, string(b))
 	} else {
-		SqliteDBPath = fmt.Sprintf("%s/%s/%s-bhyve.ssh", *dbDir, Cid, string(b))
+		SqliteDBPath = fmt.Sprintf("%s/%s/%s-vm.ssh", *dbDir, Cid, string(b))
 	}
 
 	if fileExists(SqliteDBPath) {
@@ -563,7 +567,7 @@ func (feeds *MyFeeds) HandleK8sClusterStatus(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	SqliteDBPath := fmt.Sprintf("%s/%s/%s-bhyve.ssh", *k8sDbDir, Cid, string(b))
+	SqliteDBPath := fmt.Sprintf("%s/%s/%s-vm.ssh", *k8sDbDir, Cid, string(b))
 	if fileExists(SqliteDBPath) {
 		b, err := ioutil.ReadFile(SqliteDBPath) // just pass the file name
 		if err != nil {
@@ -1014,7 +1018,9 @@ func HandleCreateVm(w http.ResponseWriter, vm Vm) {
 	str.WriteString("\",\"CommandArgs\":{\"mode\":\"create\",\"jname\":\"")
 	str.WriteString(Jname)
 	str.WriteString("\"")
-	//str.WriteString("}}");
+	str.WriteString(", \"emulator\":\"")
+	str.WriteString(vm_Engine)
+	str.WriteString("\"")
 
 	// todo: filter for insecured param=val
 	for i := 0; i < val.NumField(); i++ {
@@ -1106,7 +1112,7 @@ func HandleCreateVm(w http.ResponseWriter, vm Vm) {
 		return
 	}
 
-	SqliteDBPath := fmt.Sprintf("%s/%x/%s-bhyve.ssh", *dbDir, cid, Jname)
+	SqliteDBPath := fmt.Sprintf("%s/%x/%s-vm.ssh", *dbDir, cid, Jname)
 	fmt.Printf("[debug] Create empty/mock status file: [%s]\n", SqliteDBPath)
 
 	tfile, fileErr := os.Create(SqliteDBPath)
@@ -1201,14 +1207,14 @@ func (feeds *MyFeeds) HandleClusterCreate(w http.ResponseWriter, r *http.Request
 				fmt.Printf("paramname test passed: [%s]\n", vm.Vm_os_type)
 			}
 
-			fmt.Printf("Bhyve VM_OS_TYPE set: [%s]\n", vm.Vm_os_type)
-			vm.Image="bhyve"
+			fmt.Printf("VM VM_OS_TYPE set: [%s]\n", vm.Vm_os_type)
+			vm.Image=*vmEngine
 	}
 	switch vm.Vm_os_profile {
 		case "":
 		default:
-			fmt.Printf("Bhyve VM_OS_PROFILE set: [%s]\n", vm.Vm_os_profile)
-			vm.Image="bhyve"
+			fmt.Printf("VM VM_OS_PROFILE set: [%s]\n", vm.Vm_os_profile)
+			vm.Image=*vmEngine
 	}
 
 	switch vm.Image {
@@ -1221,7 +1227,7 @@ func (feeds *MyFeeds) HandleClusterCreate(w http.ResponseWriter, r *http.Request
 	case "k8s":
 		fmt.Printf("K8S TYPE by img: [%s]\n", vm.Image)
 	default:
-		fmt.Printf("Bhyve TYPE by img: [%s]\n", vm.Image)
+		fmt.Printf("VM TYPE by img: [%s]\n", vm.Image)
 	}
 
 	if len(vm.Pubkey) < 30 {
@@ -1301,8 +1307,8 @@ func (feeds *MyFeeds) HandleClusterCreate(w http.ResponseWriter, r *http.Request
 		cluster.K8s_name = InstanceId
 		HandleCreateK8s(w,cluster);
 	default:
-		runscript = *runScriptBhyve
-		fmt.Printf("Bhyve TYPE by img: [%s]\n", vm.Image)
+		runscript = *runScriptVm
+		fmt.Printf("VM TYPE by img: [%s]\n", vm.Image)
 		vm.Jname = InstanceId
 		HandleCreateVm(w,vm);
 	}
@@ -1902,7 +1908,7 @@ func HandleCreateK8s(w http.ResponseWriter, cluster Cluster) {
 	getNodeRecomendation(recomendation.String(), suggest)
 
 	// mock status
-	SqliteDBPath := fmt.Sprintf("%s/%x/%s-bhyve.ssh", *k8sDbDir, cid, Jname)
+	SqliteDBPath := fmt.Sprintf("%s/%x/%s-vm.ssh", *k8sDbDir, cid, Jname)
 	fmt.Printf("Create empty/mock status file: [%s]\n", SqliteDBPath)
 
 	tfile, fileErr = os.Create(SqliteDBPath)
@@ -2082,7 +2088,7 @@ func (feeds *MyFeeds) HandleClusterDestroy(w http.ResponseWriter, r *http.Reques
 				fmt.Printf("   REMOVE: %s\n", VmPath)
 				e = os.Remove(VmPath)
 
-				VmPath = fmt.Sprintf("%s/%s/%s-bhyve.ssh", *k8sDbDir, Cid, string(b))
+				VmPath = fmt.Sprintf("%s/%s/%s-vm.ssh", *k8sDbDir, Cid, string(b))
 				fmt.Printf("   REMOVE: %s\n", VmPath)
 				e = os.Remove(VmPath)
 
@@ -2107,7 +2113,7 @@ func (feeds *MyFeeds) HandleClusterDestroy(w http.ResponseWriter, r *http.Reques
 				fmt.Printf("   REMOVE: %s\n", VmPath)
 				e = os.Remove(VmPath)
 
-				VmPath = fmt.Sprintf("%s/%s/%s-bhyve.ssh", *dbDir, Cid, string(b))
+				VmPath = fmt.Sprintf("%s/%s/%s-vm.ssh", *dbDir, Cid, string(b))
 				fmt.Printf("   REMOVE: %s\n", VmPath)
 				e = os.Remove(VmPath)
 

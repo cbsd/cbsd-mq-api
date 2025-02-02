@@ -11,6 +11,7 @@ install: all
 	install cbsd-mq-api /usr/local/sbin
 ifeq ($(UNAME_S),Linux)
 	install systemd/cbsd-mq-api.service /lib/systemd/system/cbsd-mq-api.service
+	systemctl daemon-reload
 	@test -d /var/log/cbsdmq || mkdir -m 0755 /var/log/cbsdmq
 	@test -d /var/log/cbsd_mq_api || mkdir -m 0755 /var/log/cbsd_mq_api
 	@chown cbsd:cbsd /var/log/cbsdmq /var/log/cbsd_mq_api
